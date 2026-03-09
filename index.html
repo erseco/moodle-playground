@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Moodle Playground</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe5;
+        --panel: rgba(255, 251, 245, 0.9);
+        --line: rgba(111, 86, 49, 0.18);
+        --ink: #24190d;
+        --muted: #6f5c43;
+        --accent: #005f73;
+        --accent-strong: #0a9396;
+        --danger: #9b2226;
+        --shadow: 0 24px 70px rgba(36, 25, 13, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Iowan Old Style", "Palatino Linotype", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(238, 155, 0, 0.28), transparent 34%),
+          radial-gradient(circle at top right, rgba(10, 147, 150, 0.2), transparent 32%),
+          linear-gradient(180deg, #faf6f0 0%, var(--bg) 100%);
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 24px auto;
+        display: grid;
+        gap: 20px;
+      }
+
+      .hero,
+      .preview {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .hero {
+        padding: 28px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font: 600 0.78rem/1.2 ui-monospace, "SFMono-Regular", monospace;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.4rem, 6vw, 4.8rem);
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+      }
+
+      .lede {
+        margin: 0;
+        max-width: 66ch;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .card {
+        padding: 16px 18px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.48);
+      }
+
+      .card strong,
+      .status strong {
+        display: block;
+        margin-bottom: 6px;
+        font: 700 0.82rem/1.2 ui-monospace, "SFMono-Regular", monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .status {
+        display: grid;
+        gap: 10px;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.62);
+      }
+
+      progress {
+        width: 100%;
+        height: 12px;
+        appearance: none;
+      }
+
+      progress::-webkit-progress-bar {
+        background: rgba(111, 86, 49, 0.12);
+        border-radius: 999px;
+      }
+
+      progress::-webkit-progress-value {
+        background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+        border-radius: 999px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      button,
+      a.button {
+        border: 0;
+        border-radius: 999px;
+        padding: 0.92rem 1.2rem;
+        font: 700 0.92rem/1 ui-monospace, "SFMono-Regular", monospace;
+        text-decoration: none;
+        cursor: pointer;
+        transition: transform 140ms ease, opacity 140ms ease;
+      }
+
+      button:hover,
+      a.button:hover {
+        transform: translateY(-1px);
+      }
+
+      button.primary,
+      a.button.primary {
+        color: white;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      }
+
+      button.secondary,
+      a.button.secondary {
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--line);
+      }
+
+      button:disabled,
+      a.button[aria-disabled="true"] {
+        opacity: 0.42;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+
+      .log {
+        margin: 0;
+        padding: 16px 18px;
+        min-height: 160px;
+        max-height: 280px;
+        overflow: auto;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: #1f1a17;
+        color: #e8dfd0;
+        font: 0.84rem/1.5 ui-monospace, "SFMono-Regular", monospace;
+      }
+
+      .log .error {
+        color: #ffadad;
+      }
+
+      .preview {
+        overflow: hidden;
+      }
+
+      .preview header {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .preview iframe {
+        width: 100%;
+        height: min(72vh, 880px);
+        border: 0;
+        background: white;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0.4rem 0.65rem;
+        border-radius: 999px;
+        background: rgba(10, 147, 150, 0.1);
+        color: var(--accent);
+        font: 700 0.78rem/1 ui-monospace, "SFMono-Regular", monospace;
+      }
+
+      .pill.error {
+        background: rgba(155, 34, 38, 0.1);
+        color: var(--danger);
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: min(100vw - 18px, 100%);
+          margin: 10px auto 24px;
+        }
+
+        .hero {
+          padding: 20px;
+        }
+
+        .preview iframe {
+          height: 60vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">php-wasm + service worker + pglite</p>
+        <h1>Moodle Playground</h1>
+        <p class="lede">
+          PoC para arrancar Moodle 4.4 dentro del navegador, sin backend tradicional. El primer
+          arranque descarga el ZIP oficial, lo monta en el VFS de WebAssembly y deriva la navegación
+          PHP al Service Worker.
+        </p>
+
+        <div class="grid">
+          <article class="card">
+            <strong>PHP</strong>
+            <span>php-wasm / php-cgi-wasm, objetivo PHP 8.3</span>
+          </article>
+          <article class="card">
+            <strong>Database</strong>
+            <span>PGlite in-browser a través de `pdo-pglite`</span>
+          </article>
+          <article class="card">
+            <strong>Moodle</strong>
+            <span>Bootstrap de Moodle 4.4 desde ZIP remoto</span>
+          </article>
+        </div>
+
+        <section class="status">
+          <strong id="phase">Preparing runtime</strong>
+          <span id="status-text">Waiting for the Service Worker to take control.</span>
+          <progress id="progress" value="0" max="1"></progress>
+          <div class="actions">
+            <button id="start-button" class="primary">Bootstrap Moodle</button>
+            <a id="open-button" class="button secondary" href="./moodle/install.php" target="moodle-playground" aria-disabled="true">
+              Open in new tab
+            </a>
+          </div>
+        </section>
+
+        <pre id="log" class="log" aria-live="polite"></pre>
+      </section>
+
+      <section class="preview">
+        <header>
+          <div>
+            <strong>Preview</strong>
+            <div id="preview-caption">The iframe will open `/moodle/install.php` when bootstrap finishes.</div>
+          </div>
+          <div id="runtime-pill" class="pill">Starting</div>
+        </header>
+        <iframe
+          id="preview-frame"
+          title="Moodle Playground Preview"
+          name="moodle-playground"
+          loading="eager"
+        ></iframe>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
