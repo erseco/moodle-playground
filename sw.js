@@ -63,7 +63,7 @@ async function serializeRequest(request) {
   };
 }
 
-function requestPhpResponse(request, timeoutMs = 60000) {
+function requestPhpResponse(request, timeoutMs = 180000) {
   const id = self.crypto.randomUUID();
 
   return new Promise(async (resolve, reject) => {

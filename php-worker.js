@@ -57,14 +57,27 @@ globalThis.__moodleDebugHook = (detail) => {
   });
 };
 let lastFsDebugAt = 0;
+let fsOpCount = 0;
+let lastFsOpReportAt = 0;
 globalThis.__moodleFsDebugHook = (detail) => {
-  const now = Date.now();
+  fsOpCount += 1;
+  const currentTime = Date.now();
 
-  if (now - lastFsDebugAt < 200) {
+  if (currentTime - lastFsOpReportAt >= 1000) {
+    lastFsOpReportAt = currentTime;
+    publish({
+      kind: "bootstrap-progress",
+      phase: "php-fs",
+      detail: `fs-ops=${fsOpCount} last=${detail}`,
+      timestamp: nowIso(),
+    });
+  }
+
+  if (currentTime - lastFsDebugAt < 200) {
     return;
   }
 
-  lastFsDebugAt = now;
+  lastFsDebugAt = currentTime;
   publish({
     kind: "bootstrap-progress",
     phase: "php-fs",
