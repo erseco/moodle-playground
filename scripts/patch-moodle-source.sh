@@ -19,6 +19,7 @@ PDO_SQLITE_DRIVER_PATCH="$PATCH_DIR/lib/dml/sqlite3_pdo_moodle_database.php"
 SQLITE_GENERATOR_PATCH="$PATCH_DIR/lib/ddl/sqlite_sql_generator.php"
 XMLIZE_PATCH="$PATCH_DIR/lib/xmlize.php"
 XMLDB_FILE_PATCH="$PATCH_DIR/lib/xmldb/xmldb_file.php"
+ENCRYPTION_PATCH="$PATCH_DIR/lib/classes/encryption.php"
 COMPONENTPHP="$SOURCE_DIR/lib/classes/component.php"
 SETUPLIBPHP="$SOURCE_DIR/lib/setuplib.php"
 SETUPPHP="$SOURCE_DIR/lib/setup.php"
@@ -154,6 +155,11 @@ fi
 if [ -f "$XMLDB_FILE_PATCH" ]; then
   mkdir -p "$SOURCE_DIR/lib/xmldb"
   cp "$XMLDB_FILE_PATCH" "$SOURCE_DIR/lib/xmldb/xmldb_file.php"
+fi
+
+if [ -f "$ENCRYPTION_PATCH" ]; then
+  mkdir -p "$SOURCE_DIR/lib/classes"
+  cp "$ENCRYPTION_PATCH" "$SOURCE_DIR/lib/classes/encryption.php"
 fi
 
 if [ -f "$INSTALL_LANG_EN" ] && ! grep -q "pdosqlite" "$INSTALL_LANG_EN"; then

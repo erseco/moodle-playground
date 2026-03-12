@@ -29,6 +29,7 @@ const PDO_DDL_PROBE_PATH = `${MOODLE_ROOT}/__pdo_ddl_probe.php`;
 const CONFIG_NORMALIZER_PATH = `${MOODLE_ROOT}/__config_normalizer.php`;
 const CACHE_CONFIG_PATH = `${MOODLE_ROOT}/cache/classes/config.php`;
 const SQLITE_DRIVER_PATH = `${MOODLE_ROOT}/lib/dml/sqlite3_pdo_moodle_database.php`;
+const ENCRYPTION_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/encryption.php`;
 const DATAPRIVACY_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/dataprivacy/settings.php`;
 const LOG_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/log/settings.php`;
 const textEncoder = new TextEncoder();
@@ -43,6 +44,7 @@ const INTERNAL_RUNTIME_FILES = [
   CONFIG_NORMALIZER_PATH,
   CACHE_CONFIG_PATH,
   SQLITE_DRIVER_PATH,
+  ENCRYPTION_CLASS_PATH,
   DATAPRIVACY_SETTINGS_PATH,
   LOG_SETTINGS_PATH,
 ];
@@ -598,7 +600,7 @@ try {
         'frontpageloggedin' => '6',
         'frontpagecourselimit' => '200',
         'guestloginbutton' => '0',
-        'rememberusername' => '1',
+        'rememberusername' => '0',
         'auth_instructions' => '',
         'maintenance_enabled' => '0',
     ];
@@ -869,6 +871,37 @@ async function patchRuntimePhpSources(php) {
     [
       "$objects[$key] = (object)$value;\n",
       "$objects[$key] = (object)$row;\n",
+    ],
+  ]);
+
+  await patchFile(ENCRYPTION_CLASS_PATH, [
+    [
+      "    /** @var string Encryption method: Sodium */\n    const METHOD_SODIUM = 'sodium';\n",
+      "    /** @var string Encryption method: Sodium */\n    const METHOD_SODIUM = 'sodium';\n\n    /** @var string Encryption method: OpenSSL fallback */\n    const METHOD_OPENSSL = 'openssl';\n\n    /** @var string OpenSSL cipher used in the wasm fallback */\n    const OPENSSL_CIPHER = 'aes-256-cbc';\n",
+    ],
+    [
+      "    protected static function get_encryption_method(): string {\n        return self::METHOD_SODIUM;\n    }\n",
+      "    protected static function get_encryption_method(): string {\n        if (defined('SODIUM_CRYPTO_SECRETBOX_NONCEBYTES')\n                && function_exists('sodium_crypto_secretbox')\n                && function_exists('sodium_crypto_secretbox_open')\n                && function_exists('sodium_crypto_secretbox_keygen')) {\n            return self::METHOD_SODIUM;\n        }\n\n        if (function_exists('openssl_encrypt')\n                && function_exists('openssl_decrypt')\n                && function_exists('openssl_cipher_iv_length')) {\n            return self::METHOD_OPENSSL;\n        }\n\n        return self::METHOD_SODIUM;\n    }\n",
+    ],
+    [
+      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                $key = sodium_crypto_secretbox_keygen();\n                break;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
+      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                $key = sodium_crypto_secretbox_keygen();\n                break;\n            case self::METHOD_OPENSSL:\n                $key = random_bytes(32);\n                break;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
+    ],
+    [
+      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                return SODIUM_CRYPTO_SECRETBOX_NONCEBYTES;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
+      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                return SODIUM_CRYPTO_SECRETBOX_NONCEBYTES;\n            case self::METHOD_OPENSSL:\n                $length = openssl_cipher_iv_length(self::OPENSSL_CIPHER);\n                if ($length === false || $length <= 0) {\n                    throw new \\coding_exception('Unknown method: ' . $method);\n                }\n                return $length;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
+    ],
+    [
+      "            switch($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $encrypted = sodium_crypto_secretbox($data, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error', '', null, $e->getMessage());\n                    }\n                    break;\n\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
+      "            switch($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $encrypted = sodium_crypto_secretbox($data, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error', '', null, $e->getMessage());\n                    }\n                    break;\n                case self::METHOD_OPENSSL:\n                    $encrypted = openssl_encrypt($data, self::OPENSSL_CIPHER, self::get_key($method), OPENSSL_RAW_DATA, $iv);\n                    if ($encrypted === false) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error');\n                    }\n                    break;\n\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
+    ],
+    [
+      "            if (preg_match('~^(' . self::METHOD_SODIUM . '):~', $data, $matches)) {\n",
+      "            if (preg_match('~^(' . self::METHOD_SODIUM . '|' . self::METHOD_OPENSSL . '):~', $data, $matches)) {\n",
+    ],
+    [
+      "            switch ($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $decrypted = sodium_crypto_secretbox_open($encrypted, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, $e->getMessage());\n                    }\n                    // Sodium returns false if decryption fails because data is invalid.\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, 'Integrity check failed');\n                    }\n                    break;\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
+      "            switch ($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $decrypted = sodium_crypto_secretbox_open($encrypted, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, $e->getMessage());\n                    }\n                    // Sodium returns false if decryption fails because data is invalid.\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, 'Integrity check failed');\n                    }\n                    break;\n                case self::METHOD_OPENSSL:\n                    $decrypted = openssl_decrypt($encrypted, self::OPENSSL_CIPHER, self::get_key($method), OPENSSL_RAW_DATA, $iv);\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error', '', null, 'Integrity check failed');\n                    }\n                    break;\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
     ],
   ]);
 }
