@@ -56,9 +56,9 @@ $CFG->debugdisplay = 1;
 $CFG->debugdeveloper = true;
 $CFG->showcrondebugging = true;
 $CFG->cachejs = false;
-$CFG->cachetemplates = false;
-$CFG->langstringcache = false;
-$CFG->themedesignermode = true;
+$CFG->cachetemplates = true;
+$CFG->langstringcache = true;
+$CFG->themedesignermode = false;
 if (!property_exists($CFG, 'navcourselimit')) {
     $CFG->navcourselimit = 10;
 }
@@ -87,9 +87,15 @@ if (!property_exists($CFG, 'maintenance_enabled')) {
     $CFG->maintenance_enabled = 0;
 }
 
-${ignoreComponentCache ? "define('IGNORE_COMPONENT_CACHE', true);\n" : ""}define('NO_DEBUG_DISPLAY', false);
-define('MOODLE_INTERNAL', false);
-define('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE', true);
+${ignoreComponentCache ? "if (!defined('IGNORE_COMPONENT_CACHE')) { define('IGNORE_COMPONENT_CACHE', true); }\n" : ""}if (!defined('NO_DEBUG_DISPLAY')) {
+    define('NO_DEBUG_DISPLAY', false);
+}
+if (!defined('MOODLE_INTERNAL')) {
+    define('MOODLE_INTERNAL', false);
+}
+if (!defined('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE')) {
+    define('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE', true);
+}
 if (!defined('CACHE_DISABLE_ALL')) {
     define('CACHE_DISABLE_ALL', true);
 }

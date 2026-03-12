@@ -32,6 +32,10 @@ const SQLITE_DRIVER_PATH = `${MOODLE_ROOT}/lib/dml/sqlite3_pdo_moodle_database.p
 const ENCRYPTION_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/encryption.php`;
 const DATAPRIVACY_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/dataprivacy/settings.php`;
 const LOG_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/log/settings.php`;
+const HTTPSREPLACE_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/httpsreplace/settings.php`;
+const CAPABILITY_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/capability/settings.php`;
+const COHORTROLES_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/cohortroles/settings.php`;
+const DBTRANSFER_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/dbtransfer/settings.php`;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const INTERNAL_RUNTIME_FILES = [
@@ -47,6 +51,10 @@ const INTERNAL_RUNTIME_FILES = [
   ENCRYPTION_CLASS_PATH,
   DATAPRIVACY_SETTINGS_PATH,
   LOG_SETTINGS_PATH,
+  HTTPSREPLACE_SETTINGS_PATH,
+  CAPABILITY_SETTINGS_PATH,
+  COHORTROLES_SETTINGS_PATH,
+  DBTRANSFER_SETTINGS_PATH,
 ];
 
 function nowIso() {
@@ -830,6 +838,73 @@ if ($hassiteconfig) {
 `;
 }
 
+function createPatchedHttpsreplaceSettingsPhp() {
+  return `<?php
+defined('MOODLE_INTERNAL') || die;
+
+if ($hassiteconfig) {
+    $pluginname = get_string('pluginname', 'tool_httpsreplace');
+    $url = $CFG->wwwroot.'/'.$CFG->admin.'/tool/httpsreplace/index.php';
+    $ADMIN->add('security', new admin_externalpage('toolhttpsreplace', $pluginname, $url, 'moodle/site:config', true));
+
+    $httpsecurity = $ADMIN->locate('httpsecurity');
+    if ($httpsecurity) {
+        $httpsreplaceurl = $CFG->wwwroot.'/'.$CFG->admin.'/tool/httpsreplace/index.php';
+        $httpsecurity->add(
+            new admin_setting_heading(
+                'tool_httpsreplaceheader',
+                new lang_string('pluginname', 'tool_httpsreplace'),
+                new lang_string('toolintro', 'tool_httpsreplace', $httpsreplaceurl)
+            )
+        );
+    }
+}
+`;
+}
+
+function createPatchedCapabilitySettingsPhp() {
+  return `<?php
+defined('MOODLE_INTERNAL') || die;
+
+if ($ADMIN->locate('roles')) {
+    $ADMIN->add('roles', new admin_externalpage(
+        'toolcapability',
+        get_string('pluginname', 'tool_capability'),
+        "$CFG->wwwroot/$CFG->admin/tool/capability/index.php",
+        'moodle/role:manage'
+    ));
+}
+`;
+}
+
+function createPatchedCohortrolesSettingsPhp() {
+  return `<?php
+defined('MOODLE_INTERNAL') || die;
+
+$capabilities = ['moodle/cohort:view', 'moodle/role:manage'];
+$context = context_system::instance();
+$hasaccess = has_all_capabilities($capabilities, $context);
+if ($hasaccess && $ADMIN->locate('roles')) {
+    $str = get_string('managecohortroles', 'tool_cohortroles');
+    $url = new moodle_url('/admin/tool/cohortroles/index.php');
+    $ADMIN->add('roles', new admin_externalpage('toolcohortroles', $str, $url, $capabilities));
+}
+`;
+}
+
+function createPatchedDbtransferSettingsPhp() {
+  return `<?php
+defined('MOODLE_INTERNAL') || die;
+
+if ($hassiteconfig && $ADMIN->locate('experimental')) {
+    $ADMIN->add('experimental', new admin_externalpage('tooldbtransfer', get_string('dbtransfer', 'tool_dbtransfer'),
+        $CFG->wwwroot.'/'.$CFG->admin.'/tool/dbtransfer/index.php', 'moodle/site:config', false));
+    $ADMIN->add('experimental', new admin_externalpage('tooldbexport', get_string('dbexport', 'tool_dbtransfer'),
+        $CFG->wwwroot.'/'.$CFG->admin.'/tool/dbtransfer/dbexport.php', 'moodle/site:config', true));
+}
+`;
+}
+
 async function patchRuntimePhpSources(php) {
   const patchFile = async (path, replacers) => {
     const current = textDecoder.decode(await php.readFile(path));
@@ -979,6 +1054,10 @@ async function prepareMoodleRuntime({
   await php.writeFile(CONFIG_NORMALIZER_PATH, textEncoder.encode(configNormalizerPhp));
   await php.writeFile(DATAPRIVACY_SETTINGS_PATH, textEncoder.encode(createPatchedDataprivacySettingsPhp()));
   await php.writeFile(LOG_SETTINGS_PATH, textEncoder.encode(createPatchedLogSettingsPhp()));
+  await php.writeFile(HTTPSREPLACE_SETTINGS_PATH, textEncoder.encode(createPatchedHttpsreplaceSettingsPhp()));
+  await php.writeFile(CAPABILITY_SETTINGS_PATH, textEncoder.encode(createPatchedCapabilitySettingsPhp()));
+  await php.writeFile(COHORTROLES_SETTINGS_PATH, textEncoder.encode(createPatchedCohortrolesSettingsPhp()));
+  await php.writeFile(DBTRANSFER_SETTINGS_PATH, textEncoder.encode(createPatchedDbtransferSettingsPhp()));
   await patchRuntimePhpSources(php);
 
   if (allowDiagnostics) {

@@ -309,7 +309,7 @@ function forwardToPhpWorker({ request, scopeId }) {
     const timeoutId = self.setTimeout(() => {
       pending.delete(id);
       resolve(buildErrorResponse("PHP worker bridge timed out.", 504));
-    }, 180000);
+    }, 300000);
 
     pending.set(id, { resolve, timeoutId });
 
