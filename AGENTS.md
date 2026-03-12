@@ -100,6 +100,55 @@ Current model:
 
 Avoid reintroducing boot-time file-by-file copies of the full Moodle core into persistent storage.
 
+## SQLite Prototype Invariants
+
+This repo is no longer using the old active PGlite database path for the main runtime.
+
+Current database assumptions:
+
+- Moodle runs against the deprecated SQLite PDO driver
+- The SQLite database file is file-backed, not in-memory
+- The DB file lives under `/persist/moodledata`
+- The readonly Moodle core still lives under `/www/moodle`
+- `config.php` is generated at boot and must continue to point at the persistent SQLite file
+
+When touching the migration/runtime path, preserve these invariants:
+
+1. Do not reintroduce PGlite as the active DB path
+2. Do not move the DB out of the writable wasm filesystem
+3. Do not turn the readonly core mount back into a full persistent copy of Moodle
+4. Keep `$CFG->wwwroot` based on the real app base URL, not the scoped runtime path
+5. Keep the default scope stable unless there is a deliberate migration plan for persisted state
+
+Important files for this prototype:
+
+- `src/runtime/config-template.js`
+- `lib/config-template.js`
+- `src/runtime/bootstrap.js`
+- `src/runtime/php-loader.js`
+- `sw.js`
+- `src/remote/main.js`
+- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `lib/moodle-loader.js`
+- `scripts/patch-moodle-source.sh`
+- `patches/moodle/lib/dml/sqlite3_pdo_moodle_database.php`
+- `patches/moodle/lib/ddl/sqlite_sql_generator.php`
+- `patches/moodle/lib/xmlize.php`
+- `patches/moodle/lib/xmldb/xmldb_file.php`
+- `patches/moodle/lib/classes/encryption.php`
+
+Prototype-specific defaults currently matter during first boot:
+
+- `rememberusername` is intentionally disabled by default
+- several Moodle config values are seeded manually during bootstrap
+- `sodium` is not available in the current wasm runtime, so login/session-related encryption uses a local OpenSSL fallback patch
+
+If you change any of the above behavior, update:
+
+- `docs/sqlite-wasm-migration-notes.md`
+- `docs/TROUBLESHOOTING.md`
+- `docs/KNOWN-ISSUES.md`
+
 ## GitHub Pages and Base Path Handling
 
 This project is expected to run under a subpath such as `/moodle-playground`.
@@ -134,6 +183,37 @@ If Moodle fails due to missing requirements, check:
 - `scripts/sync-browser-deps.mjs`
 
 Do not add a library name to runtime config unless the browser asset is actually available in `vendor/` or the sync/build pipeline has been updated accordingly.
+
+The SQLite prototype currently does not ship all Moodle-required extensions. In practice:
+
+- `sqlite`, `pdo_sqlite`, `xml`, `dom`, `simplexml`, `openssl`, `mbstring`, `intl`, `iconv`, `zip` are part of the working runtime path
+- `curl`, `gd`, `fileinfo`, and `sodium` are still not present as wasm shared libraries in this repo
+
+Do not claim an extension is "enabled" just because Moodle recommends it. Verify:
+
+- `playground.config.json`
+- `src/runtime/runtime-registry.js`
+- `vendor/`
+
+before changing bootstrap assumptions.
+
+## Fragile Areas
+
+These areas have repeatedly caused regressions during the SQLite migration:
+
+- `sw.js`
+  - query strings must survive scoped redirects
+  - HTML rewriting must keep Moodle links/forms inside the scoped runtime
+- `vendor/php-cgi-wasm/PhpCgiBase.js`
+  - CGI environment variables such as `HTTP_USER_AGENT`, `SCRIPT_NAME`, and `SCRIPT_FILENAME` are critical
+- `src/remote/main.js`
+  - the nested iframe can stall with a valid URL/title but an empty body
+- `lib/moodle-loader.js`
+  - large readonly VFS downloads can trigger memory pressure if buffering is careless
+- `src/runtime/bootstrap.js`
+  - many install-time compatibility shims live here and are easy to break accidentally
+
+If a change touches any of these files, prefer validating in a real browser, not only with syntax checks.
 
 ## Blueprints
 
