@@ -1,5 +1,10 @@
 PHP_VERSION=8.3
 
+PHP_DIST_DIR=.local-runtime/php-wasm
+PHP_ASSET_DIR=.local-runtime/php-wasm
+PHP_CGI_DIST_DIR=.local-runtime/php-cgi-wasm
+PHP_CGI_ASSET_DIR=.local-runtime/php-cgi-wasm
+
 ASSERTIONS=0
 OPTIMIZATION=3
 SUBOPTIMIZE=3
@@ -12,6 +17,7 @@ WITH_ICONV=dynamic
 WITH_INTL=dynamic
 WITH_LIBZIP=dynamic
 WITH_ZLIB=dynamic
+WITH_TIDY=0
 WITH_MBSTRING=dynamic
 WITH_OPENSSL=dynamic
 WITH_PHAR=dynamic
