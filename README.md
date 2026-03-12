@@ -106,6 +106,7 @@ Some Moodle capabilities may still require additional extensions or a custom `ph
 
 Migration and prototype hardening notes for the current SQLite-based runtime are documented in [`docs/sqlite-wasm-migration-notes.md`](docs/sqlite-wasm-migration-notes.md).
 Fast symptom-oriented debugging notes are documented in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+The currently open issues and fragile areas are tracked in [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md).
 
 ## Deployment
 
