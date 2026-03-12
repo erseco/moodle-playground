@@ -78,7 +78,7 @@ if (!property_exists($CFG, 'guestloginbutton')) {
     $CFG->guestloginbutton = 0;
 }
 if (!property_exists($CFG, 'rememberusername')) {
-    $CFG->rememberusername = 1;
+    $CFG->rememberusername = 0;
 }
 if (!property_exists($CFG, 'auth_instructions')) {
     $CFG->auth_instructions = '';
