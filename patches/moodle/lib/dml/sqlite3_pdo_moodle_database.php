@@ -158,6 +158,23 @@ class sqlite3_pdo_moodle_database extends pdo_moodle_database {
     }
 
     /**
+     * Returns the database server info.
+     * @return array An array with 'description' and 'version' keys.
+     */
+    public function get_server_info(): array {
+        $version = '';
+        try {
+            $version = $this->pdb->getAttribute(\PDO::ATTR_SERVER_VERSION);
+        } catch (\Exception $e) {
+            $version = '3.0.0';
+        }
+        return [
+            'description' => 'SQLite ' . $version,
+            'version' => $version,
+        ];
+    }
+
+    /**
      * Return tables in database without current prefix.
      * @param bool $usecache
      * @return array

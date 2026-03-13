@@ -256,6 +256,7 @@ Defaults currently seeded:
 - `rememberusername`
 - `auth_instructions`
 - `maintenance_enabled`
+- `maxbytes`
 
 ## If install fails mid-way
 

@@ -86,6 +86,15 @@ if (!property_exists($CFG, 'auth_instructions')) {
 if (!property_exists($CFG, 'maintenance_enabled')) {
     $CFG->maintenance_enabled = 0;
 }
+if (!property_exists($CFG, 'maxbytes')) {
+    $CFG->maxbytes = 0;
+}
+if (!property_exists($CFG, 'registerauth')) {
+    $CFG->registerauth = '';
+}
+if (!property_exists($CFG, 'langmenu')) {
+    $CFG->langmenu = 0;
+}
 
 ${ignoreComponentCache ? "if (!defined('IGNORE_COMPONENT_CACHE')) { define('IGNORE_COMPONENT_CACHE', true); }\n" : ""}if (!defined('NO_DEBUG_DISPLAY')) {
     define('NO_DEBUG_DISPLAY', false);

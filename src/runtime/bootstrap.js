@@ -607,6 +607,9 @@ try {
         'rememberusername' => '0',
         'auth_instructions' => '',
         'maintenance_enabled' => '0',
+        'maxbytes' => '0',
+        'registerauth' => '',
+        'langmenu' => '0',
     ];
 
     foreach ($defaults as $name => $value) {
@@ -977,6 +980,7 @@ async function prepareMoodleRuntime({
 }) {
   const shouldMountArchive = !manifestStateMatches(savedManifestState, manifestState);
 
+  const tDirs = performance.now();
   await ensureDir(php, DOCROOT);
   await ensureDir(php, MOODLE_ROOT);
   await ensureDir(php, MOODLEDATA_ROOT);
@@ -986,7 +990,9 @@ async function prepareMoodleRuntime({
   await ensureDir(php, TEMP_ROOT);
   await ensureDir(php, `${TEMP_ROOT}/sessions`);
   await ensureDir(php, CONFIG_ROOT);
+  const dirsMs = Math.round(performance.now() - tDirs);
 
+  const tMount = performance.now();
   if (archive.kind === "vfs-image") {
     publish(shouldMountArchive ? "Mounting the readonly Moodle VFS image." : "Reusing the readonly Moodle VFS image.", 0.56);
     const binary = await php.binary;
@@ -1003,7 +1009,9 @@ async function prepareMoodleRuntime({
       publish(`Writing ${path}`, 0.58 + ratio * 0.2);
     });
   }
+  const mountMs = Math.round(performance.now() - tMount);
 
+  const tFiles = performance.now();
   await php.writeFile(`${DOCROOT}/php.ini`, textEncoder.encode(phpIni));
   await php.writeFile(`${MOODLE_ROOT}/config.php`, textEncoder.encode(configPhp));
   await php.writeFile(AUTOLOAD_CHECK_PATH, textEncoder.encode(createAutoloadCheckPhp()));
@@ -1015,7 +1023,13 @@ async function prepareMoodleRuntime({
   await php.writeFile(DATAPRIVACY_SETTINGS_PATH, textEncoder.encode(createPatchedDataprivacySettingsPhp()));
   await php.writeFile(LOG_SETTINGS_PATH, textEncoder.encode(createPatchedLogSettingsPhp()));
   await php.writeFile(HTTPSREPLACE_SETTINGS_PATH, textEncoder.encode(createPatchedHttpsreplaceSettingsPhp()));
+  const filesMs = Math.round(performance.now() - tFiles);
+
+  const tPatch = performance.now();
   await patchRuntimePhpSources(php);
+  const patchMs = Math.round(performance.now() - tPatch);
+
+  publish(`Prepare sub-timings: dirs=${dirsMs}ms mount=${mountMs}ms files=${filesMs}ms patches=${patchMs}ms`, 0.83);
 
   if (allowDiagnostics) {
     await writeJsonFile(php, MANIFEST_STATE_PATH, {
@@ -1049,8 +1063,11 @@ async function runCliProvisioning(php, publish) {
 
   const outputs = [];
   for (const [index, stage] of stages.entries()) {
+    const stageStart = performance.now();
     publish(stage.label, 0.89 + (index * 0.01));
     const output = await requestRuntimeScript(php, "/__install_database.php", { stage: stage.id });
+    const stageMs = Math.round(performance.now() - stageStart);
+    publish(`${stage.label} [${stageMs}ms]`, 0.89 + ((index + 0.5) * 0.01));
     outputs.push({ stage: stage.id, output });
   }
 
@@ -1133,6 +1150,7 @@ export async function bootstrapMoodle({
 }) {
   const runtime = config.runtimes.find((entry) => entry.id === runtimeId) || config.runtimes[0];
   const effectiveConfig = buildEffectivePlaygroundConfig(config, blueprint);
+  const tArchive = performance.now();
   let archive = await resolveBootstrapArchive({
     manifestUrl: "./assets/manifests/latest.json",
   }, ({ ratio, cached, phase, detail }) => {
@@ -1149,8 +1167,11 @@ export async function bootstrapMoodle({
     const progress = cached ? 0.44 : 0.2 + (typeof ratio === "number" ? ratio * 0.22 : 0.22);
     publish(detail || "Downloading Moodle bundle.", progress);
   });
+  const archiveMs = Math.round(performance.now() - tArchive);
+  publish(`Bundle resolved in ${archiveMs}ms.`, 0.45);
 
   if (runtime.mountStrategy === "zip-extract" && archive.manifest?.bundle?.url) {
+    const tZip = performance.now();
     publish("Switching Moodle runtime to ZIP extraction to avoid readonly VFS parser issues.", 0.5);
     const zipBytes = await fetchBundleWithCache(
       archive.manifest,
@@ -1166,6 +1187,8 @@ export async function bootstrapMoodle({
       bytes: zipBytes,
       sourceUrl: archive.manifest.bundle.url,
     };
+    const zipMs = Math.round(performance.now() - tZip);
+    publish(`ZIP extraction completed in ${zipMs}ms.`, 0.56);
   }
 
   const manifestState = buildManifestState(archive.manifest, runtimeId, config.bundleVersion);
@@ -1198,6 +1221,7 @@ export async function bootstrapMoodle({
     wwwroot,
   });
 
+  const tPrepare = performance.now();
   publish("Writing Moodle runtime configuration.", 0.84);
   await prepareMoodleRuntime({
     php,
@@ -1213,14 +1237,18 @@ export async function bootstrapMoodle({
     publish,
     allowDiagnostics: true,
   });
+  const prepareMs = Math.round(performance.now() - tPrepare);
+  publish(`Runtime preparation completed in ${prepareMs}ms.`, 0.86);
 
+  const tPdo = performance.now();
   publish("Probing PDO SQLite connectivity.", 0.865);
   const pdoProbe = await runPdoProbe(php);
+  const pdoMs = Math.round(performance.now() - tPdo);
   if (pdoProbe.ok) {
-    publish(`PDO SQLite probe connected successfully with ${pdoProbe.dsn}.`, 0.868);
+    publish(`PDO SQLite probe connected successfully with ${pdoProbe.dsn}. [${pdoMs}ms]`, 0.868);
   } else {
     const detail = pdoProbe.error?.message || "SQLite PDO connection failed.";
-    publish(`PDO SQLite probe failed: ${detail}`, 0.868);
+    publish(`PDO SQLite probe failed: ${detail} [${pdoMs}ms]`, 0.868);
   }
 
   publish("Skipping standalone SQLite DDL probe and continuing with Moodle bootstrap.", 0.869);
@@ -1251,6 +1279,7 @@ export async function bootstrapMoodle({
   }
 
   if (!installMarkerMatches && !installState?.installed) {
+    const tInstall = performance.now();
     publish("Running Moodle installation inside the CGI runtime.", 0.89);
     const provisioningResult = await runCliProvisioning(php, publish);
     if (provisioningResult.errorOutput.trim()) {
@@ -1265,23 +1294,26 @@ export async function bootstrapMoodle({
       installed: true,
       updatedAt: nowIso(),
     });
-    publish("Moodle CLI provisioning finished.", 0.91);
+    const installMs = Math.round(performance.now() - tInstall);
+    publish(`Moodle CLI provisioning finished in ${installMs}ms.`, 0.91);
   } else {
     publish("Moodle database already installed, skipping CLI provisioning.", 0.89);
   }
 
+  const tNorm = performance.now();
   publish("Normalizing persisted Moodle configuration defaults.", 0.915);
   const configNormalizer = await runConfigNormalizer(php);
+  const normMs = Math.round(performance.now() - tNorm);
   if (configNormalizer?.ok) {
     const setKeys = Object.keys(configNormalizer.set || {});
     publish(
       setKeys.length > 0
-        ? `Seeded missing config defaults: ${setKeys.join(", ")}.`
-        : "Persisted config defaults already present.",
+        ? `Seeded missing config defaults: ${setKeys.join(", ")}. [${normMs}ms]`
+        : `Persisted config defaults already present. [${normMs}ms]`,
       0.918,
     );
   } else if (configNormalizer?.error?.message) {
-    publish(`Config default normalization failed: ${configNormalizer.error.message}`, 0.918);
+    publish(`Config default normalization failed: ${configNormalizer.error.message} [${normMs}ms]`, 0.918);
   }
 
   publish("Skipping custom Moodle autoload diagnostics for the current runtime strategy.", 0.92);

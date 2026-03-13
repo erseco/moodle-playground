@@ -162,6 +162,125 @@ if [ -f "$ENCRYPTION_PATCH" ]; then
   cp "$ENCRYPTION_PATCH" "$SOURCE_DIR/lib/classes/encryption.php"
 fi
 
+PDO_DATABASE="$SOURCE_DIR/lib/dml/pdo_moodle_database.php"
+if [ -f "$PDO_DATABASE" ] && grep -q 'query_end(\$result)' "$PDO_DATABASE"; then
+  python3 - "$PDO_DATABASE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+# Fix begin_transaction, commit_transaction, rollback_transaction
+# where $result is used without being initialised (PHP 8.x warning).
+replacements = [
+    (
+        "    protected function begin_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "        try {\n"
+        "            $this->pdb->beginTransaction();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+        "    protected function begin_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "        $result = true;\n"
+        "        try {\n"
+        "            $this->pdb->beginTransaction();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "            $result = false;\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+    ),
+    (
+        "    protected function commit_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "\n"
+        "        try {\n"
+        "            $this->pdb->commit();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+        "    protected function commit_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "        $result = true;\n"
+        "        try {\n"
+        "            $this->pdb->commit();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "            $result = false;\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+    ),
+    (
+        "    protected function rollback_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "\n"
+        "        try {\n"
+        "            $this->pdb->rollBack();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+        "    protected function rollback_transaction() {\n"
+        "        $this->query_start('', NULL, SQL_QUERY_AUX);\n"
+        "        $result = true;\n"
+        "        try {\n"
+        "            $this->pdb->rollBack();\n"
+        "        } catch(PDOException $ex) {\n"
+        "            $this->lastError = $ex->getMessage();\n"
+        "            $result = false;\n"
+        "        }\n"
+        "        $this->query_end($result);\n"
+        "    }",
+    ),
+]
+
+for old, new in replacements:
+    text = text.replace(old, new, 1)
+
+path.write_text(text, encoding="utf-8")
+PY
+fi
+
+ENVIRONMENT_XML="$SOURCE_DIR/admin/environment.xml"
+if [ -f "$ENVIRONMENT_XML" ]; then
+  python3 - "$ENVIRONMENT_XML" <<'PY'
+from pathlib import Path
+import sys, re
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+# Add sqlite as a supported vendor in every DATABASE block that does not already have it.
+# Insert right after the last existing VENDOR line in each DATABASE section.
+def add_sqlite_vendor(match):
+    block = match.group(0)
+    if 'name="sqlite"' in block:
+        return block
+    # Insert before </DATABASE>
+    return block.replace(
+        "    </DATABASE>",
+        '      <VENDOR name="sqlite" version="3.0" />\n    </DATABASE>',
+    )
+
+patched = re.sub(r"<DATABASE level=\"required\">.*?</DATABASE>", add_sqlite_vendor, text, flags=re.DOTALL)
+
+if patched == text:
+    raise SystemExit("No DATABASE blocks found in environment.xml")
+
+path.write_text(patched, encoding="utf-8")
+PY
+fi
+
 if [ -f "$INSTALL_LANG_EN" ] && ! grep -q "pdosqlite" "$INSTALL_LANG_EN"; then
   python3 - "$INSTALL_LANG_EN" <<'PY'
 from pathlib import Path

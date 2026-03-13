@@ -155,7 +155,12 @@ async function getRuntimeState() {
   }
 
   runtimeStatePromise = (async () => {
+    const bootStart = performance.now();
+
+    const t0 = performance.now();
     const config = await loadPlaygroundConfig();
+    const configMs = Math.round(performance.now() - t0);
+
     const runtime = config.runtimes.find((entry) => entry.id === runtimeId) || config.runtimes[0];
     activeRuntimeConfig = runtime;
     const php = createPhpRuntime(runtime);
@@ -163,21 +168,32 @@ async function getRuntimeState() {
     postShell({
       kind: "progress",
       title: "Refreshing PHP runtime",
-      detail: `Booting ${runtime.label}.`,
+      detail: `[${configMs}ms config] Booting ${runtime.label}.`,
       progress: 0.12,
     });
 
+    const t1 = performance.now();
     await php.refresh();
+    const refreshMs = Math.round(performance.now() - t1);
+
+    postShell({
+      kind: "progress",
+      title: "Refreshing PHP runtime",
+      detail: `[${refreshMs}ms refresh] PHP runtime ready.`,
+      progress: 0.14,
+    });
 
     const publish = (detail, progress) => {
+      const elapsed = Math.round(performance.now() - bootStart);
       postShell({
         kind: "progress",
         title: "Bootstrapping Moodle",
-        detail,
+        detail: `[${elapsed}ms] ${detail}`,
         progress,
       });
     };
 
+    const t2 = performance.now();
     let bootstrapState;
     try {
       bootstrapState = await bootstrapMoodle({
@@ -194,10 +210,19 @@ async function getRuntimeState() {
       await publishPhpInfo(runtime, "bootstrap-error");
       throw error;
     }
+    const bootstrapMs = Math.round(performance.now() - t2);
+
+    const totalMs = Math.round(performance.now() - bootStart);
+    postShell({
+      kind: "progress",
+      title: "Boot timing summary",
+      detail: `Config: ${configMs}ms | PHP refresh: ${refreshMs}ms | Bootstrap: ${bootstrapMs}ms | Total: ${totalMs}ms`,
+      progress: 0.95,
+    });
 
     postShell({
       kind: "ready",
-      detail: `Moodle bootstrapped for ${runtime.label}.`,
+      detail: `Moodle bootstrapped for ${runtime.label}. [${totalMs}ms total]`,
       path: bootstrapState.readyPath || activeBlueprint?.landingPage || config.landingPath,
     });
 

@@ -1,7 +1,9 @@
 PORT ?= 8080
+LOCAL_PORT ?= 8081
+LOCAL_PHP ?= php84
 CHANNEL ?= stable500
 
-.PHONY: deps sync prepare-runtime bundle prepare serve up clean reset
+.PHONY: deps sync prepare-runtime bundle prepare serve up up-local clean reset
 
 deps:
 	npm install
@@ -20,6 +22,9 @@ serve:
 	python3 -m http.server $(PORT)
 
 up: prepare serve
+
+up-local: bundle
+	./scripts/setup-local.sh $(LOCAL_PORT) $(LOCAL_PHP)
 
 clean:
 	rm -rf .cache
