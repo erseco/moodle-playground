@@ -188,6 +188,12 @@ export function wrapPhpInstance(php, { syncFs = null, absoluteUrl = "http://loca
           : cookieHeader;
       }
 
+      // Inject cookie jar into headers so php.run() populates $_COOKIE
+      const mergedHeaders = { ...headers };
+      if (serverVars.HTTP_COOKIE) {
+        mergedHeaders.cookie = serverVars.HTTP_COOKIE;
+      }
+
       // Set cwd to the script's directory so relative paths (e.g.,
       // admin/index.php's `file_exists('../config.php')`) resolve correctly,
       // matching what a real web server does for CGI scripts.
@@ -205,7 +211,7 @@ export function wrapPhpInstance(php, { syncFs = null, absoluteUrl = "http://loca
       const phpResponse = await php.run({
         scriptPath,
         method: req.method || "GET",
-        headers,
+        headers: mergedHeaders,
         body: req.body,
         $_SERVER: serverVars,
         relativeUri: urlPath,
