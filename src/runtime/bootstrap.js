@@ -31,8 +31,6 @@ const PDO_DDL_PROBE_PATH = `${MOODLE_ROOT}/__pdo_ddl_probe.php`;
 const CONFIG_NORMALIZER_PATH = `${MOODLE_ROOT}/__config_normalizer.php`;
 const CACHE_CONFIG_PATH = `${MOODLE_ROOT}/cache/classes/config.php`;
 const COMPONENT_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/component.php`;
-const SQLITE_DRIVER_PATH = `${MOODLE_ROOT}/lib/dml/sqlite3_pdo_moodle_database.php`;
-const ENCRYPTION_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/encryption.php`;
 const ADMINLIB_PATH = `${MOODLE_ROOT}/lib/adminlib.php`;
 const DATAPRIVACY_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/dataprivacy/settings.php`;
 const LOG_SETTINGS_PATH = `${MOODLE_ROOT}/admin/tool/log/settings.php`;
@@ -50,8 +48,6 @@ const INTERNAL_RUNTIME_FILES = [
   CONFIG_NORMALIZER_PATH,
   CACHE_CONFIG_PATH,
   COMPONENT_CLASS_PATH,
-  SQLITE_DRIVER_PATH,
-  ENCRYPTION_CLASS_PATH,
   ADMINLIB_PATH,
   DATAPRIVACY_SETTINGS_PATH,
   LOG_SETTINGS_PATH,
@@ -575,6 +571,10 @@ $runStage = static function(string $name) use (&$options, &$version, &$release, 
                 ['doctonewwindow', 0, null],
                 // course/edit.php: auto-enrol admin in new courses
                 ['enroladminnewcourse', 1, null],
+                // server.php: noreplyaddress has a dynamic default based on wwwroot
+                ['noreplyaddress', 'noreply@localhost', null],
+                // server.php: supportemail (empty by default)
+                ['supportemail', '', null],
             ];
             foreach ($postinstalldefaults as [$key, $val, $plugin]) {
                 if (get_config($plugin ?? 'core', $key) === false) {
@@ -951,6 +951,7 @@ async function patchRuntimePhpSources(php) {
   const patchFile = async (path, replacers) => {
     const current = textDecoder.decode(await php.readFile(path));
     let next = current;
+    const basename = path.split("/").pop();
     for (const [search, replace] of replacers) {
       if (next.includes(search)) {
         next = next.replace(search, replace);
@@ -997,55 +998,11 @@ async function patchRuntimePhpSources(php) {
       "        $parent = $this->locate($parentname);\n        if (is_null($parent)) {\n            return false;\n        }",
     ],
     // glob() returns [] on the readonly WASM VFS because musl's libc glob
-    // doesn't go through Emscripten's FS.readdir(). The polyfill is loaded
-    // globally via auto_prepend_file (__chdir_fix.php); we swap the call
-    // and use require_once to guard against duplicate loads if the path
-    // comparison with top.php/plugins.php doesn't match exactly.
+    // doesn't go through Emscripten's FS.readdir(). We replace the glob loop
+    // with a hardcoded list of admin settings files from Moodle core.
     [
-      "foreach (glob($CFG->dirroot.'/'.$CFG->admin.'/settings/*.php') as $file) {\n            if ($file == $CFG->dirroot.'/'.$CFG->admin.'/settings/top.php') {\n                continue;\n            }\n            if ($file == $CFG->dirroot.'/'.$CFG->admin.'/settings/plugins.php') {\n            // plugins are loaded last - they may insert pages anywhere\n                continue;\n            }\n            require($file);",
-      "foreach (playground_glob($CFG->dirroot.'/'.$CFG->admin.'/settings/*.php') as $file) {\n            if (basename($file) === 'top.php' || basename($file) === 'plugins.php') {\n                continue;\n            }\n            require_once($file);",
-    ],
-  ]);
-
-  await patchFile(SQLITE_DRIVER_PATH, [
-    [
-      "$key = reset($value);\n",
-      "$row = (array)$value;\n            $key = reset($row);\n",
-    ],
-    [
-      "$objects[$key] = (object)$value;\n",
-      "$objects[$key] = (object)$row;\n",
-    ],
-  ]);
-
-  await patchFile(ENCRYPTION_CLASS_PATH, [
-    [
-      "    /** @var string Encryption method: Sodium */\n    const METHOD_SODIUM = 'sodium';\n",
-      "    /** @var string Encryption method: Sodium */\n    const METHOD_SODIUM = 'sodium';\n\n    /** @var string Encryption method: OpenSSL fallback */\n    const METHOD_OPENSSL = 'openssl';\n\n    /** @var string OpenSSL cipher used in the wasm fallback */\n    const OPENSSL_CIPHER = 'aes-256-cbc';\n",
-    ],
-    [
-      "    protected static function get_encryption_method(): string {\n        return self::METHOD_SODIUM;\n    }\n",
-      "    protected static function get_encryption_method(): string {\n        if (defined('SODIUM_CRYPTO_SECRETBOX_NONCEBYTES')\n                && function_exists('sodium_crypto_secretbox')\n                && function_exists('sodium_crypto_secretbox_open')\n                && function_exists('sodium_crypto_secretbox_keygen')) {\n            return self::METHOD_SODIUM;\n        }\n\n        if (function_exists('openssl_encrypt')\n                && function_exists('openssl_decrypt')\n                && function_exists('openssl_cipher_iv_length')) {\n            return self::METHOD_OPENSSL;\n        }\n\n        return self::METHOD_SODIUM;\n    }\n",
-    ],
-    [
-      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                $key = sodium_crypto_secretbox_keygen();\n                break;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
-      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                $key = sodium_crypto_secretbox_keygen();\n                break;\n            case self::METHOD_OPENSSL:\n                $key = random_bytes(32);\n                break;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
-    ],
-    [
-      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                return SODIUM_CRYPTO_SECRETBOX_NONCEBYTES;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
-      "        switch ($method) {\n            case self::METHOD_SODIUM:\n                return SODIUM_CRYPTO_SECRETBOX_NONCEBYTES;\n            case self::METHOD_OPENSSL:\n                $length = openssl_cipher_iv_length(self::OPENSSL_CIPHER);\n                if ($length === false || $length <= 0) {\n                    throw new \\coding_exception('Unknown method: ' . $method);\n                }\n                return $length;\n            default:\n                throw new \\coding_exception('Unknown method: ' . $method);\n        }\n",
-    ],
-    [
-      "            switch($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $encrypted = sodium_crypto_secretbox($data, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error', '', null, $e->getMessage());\n                    }\n                    break;\n\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
-      "            switch($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $encrypted = sodium_crypto_secretbox($data, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error', '', null, $e->getMessage());\n                    }\n                    break;\n                case self::METHOD_OPENSSL:\n                    $encrypted = openssl_encrypt($data, self::OPENSSL_CIPHER, self::get_key($method), OPENSSL_RAW_DATA, $iv);\n                    if ($encrypted === false) {\n                        throw new \\moodle_exception('encryption_encryptfailed', 'error');\n                    }\n                    break;\n\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
-    ],
-    [
-      "            if (preg_match('~^(' . self::METHOD_SODIUM . '):~', $data, $matches)) {\n",
-      "            if (preg_match('~^(' . self::METHOD_SODIUM . '|' . self::METHOD_OPENSSL . '):~', $data, $matches)) {\n",
-    ],
-    [
-      "            switch ($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $decrypted = sodium_crypto_secretbox_open($encrypted, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, $e->getMessage());\n                    }\n                    // Sodium returns false if decryption fails because data is invalid.\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, 'Integrity check failed');\n                    }\n                    break;\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
-      "            switch ($method) {\n                case self::METHOD_SODIUM:\n                    try {\n                        $decrypted = sodium_crypto_secretbox_open($encrypted, $iv, self::get_key($method));\n                    } catch (\\SodiumException $e) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, $e->getMessage());\n                    }\n                    // Sodium returns false if decryption fails because data is invalid.\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error',\n                                '', null, 'Integrity check failed');\n                    }\n                    break;\n                case self::METHOD_OPENSSL:\n                    $decrypted = openssl_decrypt($encrypted, self::OPENSSL_CIPHER, self::get_key($method), OPENSSL_RAW_DATA, $iv);\n                    if ($decrypted === false) {\n                        throw new \\moodle_exception('encryption_decryptfailed', 'error', '', null, 'Integrity check failed');\n                    }\n                    break;\n                default:\n                    throw new \\coding_exception('Unknown method: ' . $method);\n            }\n",
+      "        foreach (glob($CFG->dirroot.'/'.$CFG->admin.'/settings/*.php') as $file) {\n            if ($file == $CFG->dirroot.'/'.$CFG->admin.'/settings/top.php') {\n                continue;\n            }\n            if ($file == $CFG->dirroot.'/'.$CFG->admin.'/settings/plugins.php') {\n            // plugins are loaded last - they may insert pages anywhere\n                continue;\n            }\n            require($file);",
+      "        $__settingsdir = $CFG->dirroot.'/'.$CFG->admin.'/settings';\n        foreach (['ai','analytics','appearance','badges','competency','courses','development','fileredact','frontpage','grades','h5p','language','license','location','messaging','mnet','moodlenet','payment','reportbuilder','security','server','subsystems','userfeedback','users'] as $__sf) {\n            $file = $__settingsdir . '/' . $__sf . '.php';\n            if (!file_exists($file)) { continue; }\n            require($file);",
     ],
   ]);
 }
@@ -1253,7 +1210,13 @@ export async function bootstrapMoodle({
     }
 
     const progress = cached ? 0.44 : 0.2 + (typeof ratio === "number" ? ratio * 0.22 : 0.22);
-    publish(detail || "Downloading Moodle bundle.", progress);
+    // Only publish at ~10% intervals to avoid log spam
+    const pct = Math.floor((typeof ratio === "number" ? ratio : 0) * 10);
+    if (cached || pct !== bootstrapMoodle._lastDownloadPct) {
+      bootstrapMoodle._lastDownloadPct = pct;
+      const label = typeof ratio === "number" ? `Downloading Moodle bundle (${Math.round(ratio * 100)}%).` : (detail || "Downloading Moodle bundle.");
+      publish(label, progress);
+    }
   });
   const archiveMs = Math.round(performance.now() - tArchive);
   publish(`Bundle resolved in ${archiveMs}ms.`, 0.45);

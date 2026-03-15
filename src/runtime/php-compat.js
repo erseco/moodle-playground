@@ -37,10 +37,19 @@ async function normalizeRequest(requestOrUrl) {
 }
 
 /**
- * Resolve the PHP script path from a URL pathname.
+ * Resolve the PHP script path and PATH_INFO from a URL pathname.
  * Handles directory requests by appending index.php.
+ * Handles PATH_INFO (e.g., /theme/styles.php/boost/123/all).
  */
 function resolveScriptPath(pathname) {
+  // Check for PATH_INFO: split at ".php/" to find the script and the extra path
+  const phpIdx = pathname.indexOf(".php/");
+  if (phpIdx >= 0) {
+    const scriptPath = `${MOODLE_ROOT}${pathname.substring(0, phpIdx + 4)}`;
+    const pathInfo = pathname.substring(phpIdx + 4);
+    return { scriptPath, pathInfo };
+  }
+
   let scriptPath = `${MOODLE_ROOT}${pathname}`;
 
   // Directory requests → index.php
@@ -48,7 +57,7 @@ function resolveScriptPath(pathname) {
     scriptPath += "index.php";
   }
 
-  return scriptPath;
+  return { scriptPath, pathInfo: "" };
 }
 
 const MIME_TYPES = {
@@ -129,7 +138,7 @@ export function wrapPhpInstance(php, { syncFs = null, absoluteUrl = "http://loca
       const qIdx = urlPath.indexOf("?");
       const pathname = qIdx >= 0 ? urlPath.substring(0, qIdx) : urlPath;
       const queryString = qIdx >= 0 ? urlPath.substring(qIdx + 1) : "";
-      const scriptPath = resolveScriptPath(pathname);
+      const { scriptPath, pathInfo } = resolveScriptPath(pathname);
 
       // Serve static files (images, CSS, JS, etc.) directly from the filesystem
       // without executing them through PHP.
@@ -166,6 +175,7 @@ export function wrapPhpInstance(php, { syncFs = null, absoluteUrl = "http://loca
         HTTP_USER_AGENT: "MoodlePlayground/1.0 (WASM)",
         REMOTE_ADDR: "127.0.0.1",
         HTTPS: parsedAbsoluteUrl.protocol === "https:" ? "on" : "",
+        PATH_INFO: pathInfo || "",
       };
 
       // Add HTTP_* headers from the request
