@@ -613,6 +613,12 @@ try {
         'maxbytes' => '0',
         'registerauth' => '',
         'langmenu' => '0',
+        'defaultrequestcategory' => '1',
+        'customusermenuitems' => '',
+        'gradepointdefault' => '100',
+        'gradepointmax' => '100',
+        'downloadcoursecontentallowed' => '0',
+        'enablesharingtomoodlenet' => '0',
     ];
 
     foreach ($defaults as $name => $value) {
@@ -624,6 +630,23 @@ try {
         } else {
             $result['kept'][$name] = $current;
             $CFG->{\$name} = $current;
+        }
+    }
+
+    $pluginDefaults = [
+        'moodlecourse' => [
+            'hiddensections' => '1',
+            'coursedisplay' => '0',
+            'enablecompletion' => '1',
+        ],
+    ];
+    foreach ($pluginDefaults as $plugin => $settings) {
+        foreach ($settings as $name => $value) {
+            $current = get_config($plugin, $name);
+            if ($current === false || $current === null) {
+                set_config($name, $value, $plugin);
+                $result['set']["{$plugin}/{$name}"] = $value;
+            }
         }
     }
 

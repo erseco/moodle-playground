@@ -145,6 +145,11 @@ export function wrapPhpInstance(php, { syncFs = null, absoluteUrl = "http://loca
         }
       }
 
+      // Return 404 for PHP scripts that don't exist in the filesystem
+      if (!php.fileExists(scriptPath)) {
+        return new Response("Not Found", { status: 404 });
+      }
+
       // Build $_SERVER to match what Moodle expects from a CGI environment
       const serverVars = {
         DOCUMENT_ROOT: MOODLE_ROOT,
