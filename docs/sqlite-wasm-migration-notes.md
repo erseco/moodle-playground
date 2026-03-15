@@ -1,6 +1,8 @@
 # SQLite + php-wasm Migration Notes
 
-This document records the repo-local changes made to run Moodle in `php-wasm` with a file-backed SQLite database instead of the previous PGlite/PDO-PGlite path.
+This document records the repo-local changes made to run Moodle in WebAssembly PHP with a file-backed SQLite database instead of the previous PGlite/PDO-PGlite path.
+
+> **Runtime update (March 2025)**: The PHP runtime was migrated from `seanmorris/php-wasm` (v0.0.9-alpha-32) to WordPress Playground's `@php-wasm/web` + `@php-wasm/universal` (v3.1.11). This replaced 14 vendored packages and a manual extension-loading pipeline with two npm packages. The compatibility wrapper in `src/runtime/php-compat.js` maps the WP Playground API to the interface expected by the existing codebase. All PHP extensions (including previously-missing `curl`, `gd`, `fileinfo`, `sodium`) are now built into the WASM binary.
 
 It is intentionally pragmatic: it lists what was changed, why it was changed, where the change lives, and which caveats still exist in the prototype.
 

@@ -244,6 +244,14 @@ function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
     return decodedValue;
   }
 
+  // Leave relative URLs (e.g. "upgradesettings.php", "../index.php") untouched.
+  // The browser resolves them relative to the current page path, which already
+  // carries the scoped prefix.  Rewriting them would resolve against the origin
+  // root and lose the directory context (e.g. admin/).
+  if (!decodedValue.startsWith("/") && !decodedValue.includes("://")) {
+    return decodedValue;
+  }
+
   try {
     const absolute = new URL(decodedValue, origin);
     if (absolute.origin !== origin) {
@@ -363,6 +371,13 @@ self.addEventListener("fetch", (event) => {
       runtimeId,
       scopeId,
     }).catch((error) => buildErrorResponse(String(error?.stack || error?.message || error)));
+
+    if (response.status >= 300 && response.status < 400) {
+      await broadcastToClients({
+        kind: "sw-debug",
+        detail: `Redirect ${response.status} from ${requestPath} → Location: ${response.headers.get("location") || "(none)"}`,
+      });
+    }
 
     const locationScopedResponse = rewriteScopedLocation(response, {
       origin: url.origin,

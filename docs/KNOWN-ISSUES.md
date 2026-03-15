@@ -1,6 +1,6 @@
 # Known Issues
 
-This file lists the currently known open issues in the SQLite + php-wasm prototype.
+This file lists the currently known open issues in the SQLite + @php-wasm/web prototype.
 
 It is intentionally short:
 
@@ -46,41 +46,17 @@ Notes:
 - this is not the same issue as CSS failing to load
 - several times the DOM URL/title were correct while the body stayed empty
 
-## 2. Some required Moodle extensions are still missing in the wasm runtime
+## 2. PHP extensions — resolved
 
 Status:
 
-- open
+- resolved (migrated to `@php-wasm/web`)
 
-Missing shared libraries in this repo:
+The `@php-wasm/web` PHP 8.3 runtime includes all previously-missing extensions
+(`curl`, `gd`, `fileinfo`, `sodium`, `xmlreader`, `xmlwriter`) built into the WASM binary.
 
-- `curl`
-- `gd`
-- `fileinfo`
-- `sodium`
-
-Impact:
-
-- medium to high depending on the Moodle code path
-
-Current mitigation:
-
-- `sodium` is worked around with a local OpenSSL fallback in:
-  - `patches/moodle/lib/classes/encryption.php`
-  - runtime patching in `src/runtime/bootstrap.js`
-
-Not solved yet:
-
-- `curl`
-- `gd`
-- `fileinfo`
-
-Where to continue:
-
-- `playground.config.json`
-- `src/runtime/runtime-registry.js`
-- `scripts/sync-browser-deps.mjs`
-- wasm extension packaging under `vendor/`
+The OpenSSL fallback patch for `sodium` is kept for compatibility but `sodium` is now
+natively available. The patch can be removed once verified in production.
 
 ## 3. Runtime still relies on both build-time and boot-time patching
 
@@ -179,7 +155,7 @@ Impact:
 Where to continue:
 
 - `sw.js`
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `src/runtime/php-compat.js`
 - `src/runtime/php-loader.js`
 
 Notes:
@@ -211,4 +187,4 @@ If continuing work from here, the next priority should be:
 
 1. make the first render of the inner Moodle iframe deterministic
 2. keep the login/home route rendering without a manual second load
-3. only then widen extension coverage further
+3. verify all newly-available extensions work correctly with Moodle

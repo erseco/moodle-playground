@@ -1,9 +1,0 @@
-{
-	"collationUCAData": "implicithan",
-	"localeFilter": {
-		"filterType": "locale",
-		"whitelist": [
-			"en_US"
-		]
-	}
-}

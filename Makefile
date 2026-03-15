@@ -3,20 +3,18 @@ LOCAL_PORT ?= 8081
 LOCAL_PHP ?= php84
 CHANNEL ?= stable500
 
-.PHONY: deps sync prepare-runtime bundle prepare serve up up-local clean reset
+.PHONY: deps build-worker bundle prepare serve up up-local clean reset
 
 deps:
 	npm install
 
-sync:
-	npm run sync-browser-deps
-
-prepare-runtime: sync
+build-worker:
+	npm run build:worker
 
 bundle:
 	CHANNEL=$(CHANNEL) npm run bundle
 
-prepare: deps prepare-runtime bundle
+prepare: deps build-worker bundle
 
 serve:
 	python3 -m http.server $(PORT)
@@ -33,4 +31,4 @@ clean:
 	touch assets/manifests/.gitkeep
 
 reset: clean
-	rm -rf vendor
+	rm -rf dist

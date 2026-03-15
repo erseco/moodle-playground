@@ -23,7 +23,7 @@ php -l patches/moodle/lib/classes/encryption.php
 Bundle and runtime:
 
 ```bash
-npm run sync-browser-deps
+npm run build:worker
 npm run bundle
 ```
 
@@ -41,7 +41,7 @@ The most useful files for runtime debugging are:
 - `src/runtime/bootstrap.js`
 - `src/remote/main.js`
 - `sw.js`
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `src/runtime/php-compat.js`
 - `lib/moodle-loader.js`
 
 ## Symptoms
@@ -110,8 +110,7 @@ Notes:
 
 Likely cause:
 
-- the wasm runtime does not ship `sodium`
-- Moodle 5 assumes sodium is always present
+- `sodium` is now available via `@php-wasm/web` but this error may still appear if the runtime fails to load
 
 Files:
 
@@ -129,29 +128,29 @@ Current workaround:
 
 Likely cause:
 
-- CGI bridge did not expose request headers as standard `HTTP_*` variables
+- PHP request handler did not expose request headers as standard `HTTP_*` variables
 
 File:
 
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `src/runtime/php-compat.js`
 
 ### `No input file specified.` for `styles_debug.php`, `javascript.php`, `yui_combo.php`
 
 Likely cause:
 
-- scoped URL/request rewriting mismatch between the Service Worker and PHP CGI bridge
+- scoped URL/request rewriting mismatch between the Service Worker and PHP request handler
 
 Files:
 
 - `sw.js`
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `src/runtime/php-compat.js`
 - `src/runtime/php-loader.js`
 
 What to inspect:
 
 - request URL seen by the Service Worker
 - forwarded request URL sent to the php worker
-- computed `SCRIPT_NAME` and `SCRIPT_FILENAME` in the CGI bridge
+- computed `SCRIPT_NAME` and `SCRIPT_FILENAME` in the PHP request handler
 
 ### `ERR_TOO_MANY_REDIRECTS` or "Incorrect access detected"
 
@@ -283,27 +282,11 @@ If failure happens:
 
 ## Extension reality in this repo
 
-Present in runtime path:
+The `@php-wasm/web` PHP 8.3 runtime includes all required extensions built into the WASM binary:
 
-- `dom`
-- `iconv`
-- `intl`
-- `libxml`
-- `simplexml`
-- `xml`
-- `zip`
-- `mbstring`
-- `openssl`
-- `sqlite`
+- `dom`, `iconv`, `intl`, `libxml`, `simplexml`, `xml`, `zip`, `mbstring`, `openssl`,
+  `sqlite3`, `pdo_sqlite`, `phar`, `curl`, `gd`, `fileinfo`, `sodium`, `xmlreader`, `xmlwriter`
 
-Still missing as wasm shared libs:
-
-- `curl`
-- `gd`
-- `fileinfo`
-- `sodium`
-
-This means:
-
-- do not assume Moodle's production PHP requirements map 1:1 onto this prototype runtime
-- for now, focus on the minimum required path for boot/install/navigation
+Note: `curl` is available as an extension but actual network requests from WASM are constrained
+(uses fetch-based transport, not real sockets). Moodle features depending on outbound HTTP may
+still not work fully.

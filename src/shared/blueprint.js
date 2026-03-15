@@ -36,7 +36,8 @@ function absolutizeUrl(value) {
 }
 
 export function getBlueprintSchemaUrl() {
-  return new URL("../../assets/blueprints/blueprint-schema.json", import.meta.url).toString();
+  const base = typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : new URL("../../", import.meta.url).href;
+  return new URL("assets/blueprints/blueprint-schema.json", base).toString();
 }
 
 export function buildDefaultBlueprint(config) {

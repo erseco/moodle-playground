@@ -1,7 +1,9 @@
 import { buildEffectivePlaygroundConfig } from "../shared/blueprint.js";
 import {
   ADMIN_DIRECTORY,
+  CHDIR_FIX_PATH,
   COMPONENT_CACHE_PATH,
+  createChdirFixPhp,
   createMoodleConfigPhp,
   createPhpIni,
   MOODLEDATA_ROOT,
@@ -38,6 +40,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const INTERNAL_RUNTIME_FILES = [
   `${MOODLE_ROOT}/config.php`,
+  CHDIR_FIX_PATH,
   AUTOLOAD_CHECK_PATH,
   INSTALL_CHECK_PATH,
   INSTALL_RUNNER_PATH,
@@ -610,6 +613,12 @@ try {
         'maxbytes' => '0',
         'registerauth' => '',
         'langmenu' => '0',
+        'defaultrequestcategory' => '1',
+        'customusermenuitems' => '',
+        'gradepointdefault' => '100',
+        'gradepointmax' => '100',
+        'downloadcoursecontentallowed' => '0',
+        'enablesharingtomoodlenet' => '0',
     ];
 
     foreach ($defaults as $name => $value) {
@@ -621,6 +630,23 @@ try {
         } else {
             $result['kept'][$name] = $current;
             $CFG->{\$name} = $current;
+        }
+    }
+
+    $pluginDefaults = [
+        'moodlecourse' => [
+            'hiddensections' => '1',
+            'coursedisplay' => '0',
+            'enablecompletion' => '1',
+        ],
+    ];
+    foreach ($pluginDefaults as $plugin => $settings) {
+        foreach ($settings as $name => $value) {
+            $current = get_config($plugin, $name);
+            if ($current === false || $current === null) {
+                set_config($name, $value, $plugin);
+                $result['set']["{$plugin}/{$name}"] = $value;
+            }
         }
     }
 
@@ -1014,6 +1040,7 @@ async function prepareMoodleRuntime({
   const tFiles = performance.now();
   await php.writeFile(`${DOCROOT}/php.ini`, textEncoder.encode(phpIni));
   await php.writeFile(`${MOODLE_ROOT}/config.php`, textEncoder.encode(configPhp));
+  await php.writeFile(CHDIR_FIX_PATH, textEncoder.encode(createChdirFixPhp()));
   await php.writeFile(AUTOLOAD_CHECK_PATH, textEncoder.encode(createAutoloadCheckPhp()));
   await php.writeFile(INSTALL_CHECK_PATH, textEncoder.encode(createInstallCheckPhp()));
   await php.writeFile(INSTALL_RUNNER_PATH, textEncoder.encode(installRunnerPhp));
@@ -1151,8 +1178,9 @@ export async function bootstrapMoodle({
   const runtime = config.runtimes.find((entry) => entry.id === runtimeId) || config.runtimes[0];
   const effectiveConfig = buildEffectivePlaygroundConfig(config, blueprint);
   const tArchive = performance.now();
+  const manifestUrl = new URL("./assets/manifests/latest.json", appBaseUrl || self.location.href).toString();
   let archive = await resolveBootstrapArchive({
-    manifestUrl: "./assets/manifests/latest.json",
+    manifestUrl,
   }, ({ ratio, cached, phase, detail }) => {
     if (phase === "manifest") {
       publish(detail, 0.16);
@@ -1275,7 +1303,22 @@ export async function bootstrapMoodle({
       installMarkerMatches = true;
     }
   } else {
-    publish("No persisted install marker found for this scope. Running Moodle installation directly.", 0.87);
+    publish("No persisted install marker found. Checking if Moodle is already installed in the database.", 0.87);
+    try {
+      installState = await runProvisioningCheck(php);
+      if (installState.installed) {
+        publish("Moodle installation detected from the config table (marker was missing).", 0.885);
+        await writeJsonFile(php, installStatePath, {
+          ...manifestState,
+          dbName,
+          installed: true,
+          updatedAt: nowIso(),
+        });
+        installMarkerMatches = true;
+      }
+    } catch {
+      publish("Provisioning check failed — will proceed with fresh install.", 0.88);
+    }
   }
 
   if (!installMarkerMatches && !installState?.installed) {
@@ -1296,6 +1339,29 @@ export async function bootstrapMoodle({
     });
     const installMs = Math.round(performance.now() - tInstall);
     publish(`Moodle CLI provisioning finished in ${installMs}ms.`, 0.91);
+
+    // Verify database is accessible after install
+    try {
+      const verifyResult = await php.run(`<?php
+        error_reporting(0);
+        $dbFile = '${escapePhpSingleQuoted(dbFile)}';
+        $result = ['dbFileExists' => file_exists($dbFile), 'dbFileSize' => @filesize($dbFile)];
+        try {
+          $pdo = new PDO('sqlite:' . $dbFile);
+          $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+          $version = $pdo->query("SELECT value FROM mdl_config WHERE name = 'version'")->fetchColumn();
+          $result['version'] = $version;
+          $result['tableCount'] = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")->fetchColumn();
+        } catch (Throwable $e) {
+          $result['error'] = $e->getMessage();
+        }
+        echo json_encode($result);
+      `);
+      publish(`Post-install DB verify: ${verifyResult.text}`, 0.915);
+    } catch (verifyError) {
+      publish(`Post-install DB verify failed: ${verifyError.message}`, 0.915);
+    }
+
   } else {
     publish("Moodle database already installed, skipping CLI provisioning.", 0.89);
   }
@@ -1318,14 +1384,11 @@ export async function bootstrapMoodle({
 
   publish("Skipping custom Moodle autoload diagnostics for the current runtime strategy.", 0.92);
 
-  const missingExtensions = config.runtimes.find((entry) => entry.id === runtimeId)?.missingExtensions || [];
-  if (missingExtensions.length > 0) {
-    publish(`Runtime still needs validation for: ${missingExtensions.join(", ")}.`, 0.94);
-  }
+  publish("All PHP extensions are provided by the @php-wasm/web runtime.", 0.94);
 
-  const readyPath = (effectiveConfig.landingPath || "").includes("install.php")
-    ? "/"
-    : effectiveConfig.landingPath || "/";
+  // After fresh install, go to /login/index.php so Moodle can render the
+  // login page directly without a redirect chain through / or /admin/index.php.
+  const readyPath = "/login/index.php";
 
   return {
     manifest: archive.manifest,

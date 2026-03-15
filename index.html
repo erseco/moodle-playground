@@ -82,7 +82,10 @@
           <section id="logs-panel" class="side-panel__content side-panel__content--stack is-hidden" role="tabpanel" aria-labelledby="logs-tab" data-panel-view="logs">
             <div class="panel__row">
               <span>Runtime log</span>
-              <button type="button" id="clear-logs-button">Clear</button>
+              <span class="panel__row-actions">
+                <button type="button" id="copy-logs-button">Copy</button>
+                <button type="button" id="clear-logs-button">Clear</button>
+              </span>
             </div>
             <pre id="log-panel" class="log-panel"></pre>
           </section>
