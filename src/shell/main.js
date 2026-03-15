@@ -8,7 +8,6 @@ import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { resolveRemoteUrl } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
 import { clearScopeSession, getOrCreateScopeId, loadSessionState, saveSessionState } from "../shared/storage.js";
-import { createProvisioningRuntime } from "../runtime/php-loader.js";
 
 const els = {
   addressForm: document.querySelector("#address-form"),
@@ -18,6 +17,7 @@ const els = {
   blueprintTab: document.querySelector("#blueprint-tab"),
   blueprintTextarea: document.querySelector("#blueprint-textarea"),
   clearLogs: document.querySelector("#clear-logs-button"),
+  copyLogs: document.querySelector("#copy-logs-button"),
   exportButton: document.querySelector("#export-button"),
   importInput: document.querySelector("#import-input"),
   frame: document.querySelector("#site-frame"),
@@ -208,61 +208,25 @@ function setPhpInfoContent(html = "") {
 
 function requestPhpInfoCapture() {
   setActivePanel("phpinfo");
-  void capturePhpInfoLocally("manual");
+  capturePhpInfoViaWorker("manual");
 }
 
-async function capturePhpInfoLocally(reason = "manual") {
+function capturePhpInfoViaWorker(reason = "manual") {
   if (!config) {
     appendLog("Cannot capture PHP info before the playground configuration is loaded.", true);
     return;
   }
 
-  if (phpInfoCapturePromise) {
-    return phpInfoCapturePromise;
+  appendLog(`Requesting PHP runtime diagnostics (${reason}).`);
+
+  // Send capture request to the remote iframe, which forwards it to the worker.
+  // The worker will respond via BroadcastChannel with a "phpinfo" message.
+  const remoteFrame = document.querySelector("#remote-frame");
+  if (remoteFrame?.contentWindow) {
+    remoteFrame.contentWindow.postMessage({ kind: "capture-phpinfo" }, "*");
+  } else {
+    appendLog("Cannot capture PHP info: remote frame not available.", true);
   }
-
-  const runtime = config.runtimes.find((entry) => entry.id === currentRuntimeId) || getDefaultRuntime(config);
-  appendLog(`Capturing PHP runtime diagnostics for ${runtime.label} (${reason}).`);
-
-  phpInfoCapturePromise = (async () => {
-    const php = createProvisioningRuntime(runtime);
-    const output = [];
-    const errors = [];
-    const onOutput = (event) => output.push(String(event.detail ?? ""));
-    const onError = (event) => errors.push(String(event.detail ?? ""));
-
-    php.addEventListener("output", onOutput);
-    php.addEventListener("error", onError);
-
-    try {
-      await php.refresh();
-      await php.run(`<?php
-ob_start();
-phpinfo();
-$html = ob_get_clean();
-echo $html;
-`);
-
-      const html = output.join("");
-      if (!html.trim()) {
-        throw new Error("phpinfo() returned no HTML output.");
-      }
-
-      setPhpInfoContent(html);
-      appendLog(`Captured PHP runtime diagnostics for ${runtime.label}.`);
-    } catch (error) {
-      const detail = String(error?.stack || error?.message || error);
-      const stderr = errors.join("");
-      setPhpInfoContent(`<!doctype html><meta charset="utf-8"><pre>${detail}${stderr ? `\n\n${stderr}` : ""}</pre>`);
-      appendLog(`PHP info capture failed: ${detail}`, true);
-    } finally {
-      php.removeEventListener("output", onOutput);
-      php.removeEventListener("error", onError);
-      phpInfoCapturePromise = null;
-    }
-  })();
-
-  return phpInfoCapturePromise;
 }
 
 function setActivePanel(panel) {
@@ -380,7 +344,7 @@ function bindShellChannel() {
         appendLog(message.detail, true);
         if (!latestPhpInfoHtml) {
           setActivePanel("phpinfo");
-          void capturePhpInfoLocally("bootstrap-error");
+          capturePhpInfoViaWorker("bootstrap-error");
         }
         break;
       case "phpinfo":
@@ -447,6 +411,14 @@ els.phpInfoTab.addEventListener("click", () => setActivePanel("phpinfo"));
 els.blueprintTab.addEventListener("click", () => setActivePanel("blueprint"));
 els.clearLogs.addEventListener("click", () => {
   els.logPanel.textContent = "";
+});
+els.copyLogs.addEventListener("click", () => {
+  const text = els.logPanel.textContent || "";
+  navigator.clipboard.writeText(text).then(() => {
+    const original = els.copyLogs.textContent;
+    els.copyLogs.textContent = "Copied!";
+    setTimeout(() => { els.copyLogs.textContent = original; }, 1200);
+  });
 });
 els.phpInfoButton.addEventListener("click", requestPhpInfoCapture);
 els.refreshPhpInfoButton.addEventListener("click", requestPhpInfoCapture);

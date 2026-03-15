@@ -100,7 +100,7 @@ ${ignoreComponentCache ? "if (!defined('IGNORE_COMPONENT_CACHE')) { define('IGNO
     define('NO_DEBUG_DISPLAY', false);
 }
 if (!defined('MOODLE_INTERNAL')) {
-    define('MOODLE_INTERNAL', false);
+    define('MOODLE_INTERNAL', true);
 }
 if (!defined('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE')) {
     define('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE', true);
@@ -155,6 +155,22 @@ require_once('${escapePhpSingleQuoted(MOODLE_ROOT)}/lib/setup.php');
 `;
 }
 
+export const CHDIR_FIX_PATH = `${MOODLE_ROOT}/__chdir_fix.php`;
+
+export function createChdirFixPhp() {
+  return `<?php
+// Set cwd to the script's directory so relative paths (e.g.,
+// admin/index.php's file_exists('../config.php')) resolve correctly,
+// matching what a real web server does for CGI scripts.
+if (!empty(\$_SERVER['SCRIPT_FILENAME'])) {
+    \$dir = dirname(\$_SERVER['SCRIPT_FILENAME']);
+    if (\$dir && is_dir(\$dir)) {
+        chdir(\$dir);
+    }
+}
+`;
+}
+
 export function createPhpIni({ timezone = "UTC" } = {}) {
   return `[PHP]
 date.timezone=${timezone}
@@ -172,5 +188,6 @@ sys_temp_dir=${TEMP_ROOT}
 upload_tmp_dir=${TEMP_ROOT}
 session.save_handler=files
 session.save_path=${TEMP_ROOT}/sessions
+auto_prepend_file=${CHDIR_FIX_PATH}
 `;
 }

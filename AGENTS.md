@@ -25,7 +25,7 @@ The readonly Moodle core is loaded from a prebuilt VFS bundle while mutable stat
 
 ## Build System
 
-This project uses npm and a small Makefile workflow.
+This project uses npm, esbuild, and a small Makefile workflow.
 
 ### Requirements
 
@@ -38,8 +38,7 @@ This project uses npm and a small Makefile workflow.
 
 ```bash
 npm install
-npm run sync-browser-deps
-npm run prepare-runtime
+npm run build:worker
 npm run bundle
 
 make prepare
@@ -52,8 +51,18 @@ make up
 
 - `assets/moodle/`: readonly runtime bundle files (`.vfs.bin`, index, optional zip)
 - `assets/manifests/`: generated bundle manifests
+- `dist/`: esbuild output (php-worker bundle, WASM files, ICU data)
 
 Do not hand-edit generated bundle artifacts unless the task is specifically about the build output.
+
+### Worker Bundling
+
+The PHP worker (`php-worker.js`) is bundled with esbuild into `dist/php-worker.bundle.js`.
+This bundles all runtime dependencies (`@php-wasm/web`, `@php-wasm/universal`, shared modules)
+into a single ESM file that can be loaded as a Web Worker. WASM and ICU data files are
+copied to `dist/` with content hashes and loaded at runtime.
+
+Run `npm run build:worker` (or `make build-worker`) to rebuild after changes.
 
 ## Architecture
 
@@ -65,13 +74,29 @@ index.html
      -> remote.html
         -> src/remote/main.js
            -> sw.js
-              -> php-worker.js
+              -> dist/php-worker.bundle.js
+                 -> src/runtime/php-loader.js (@php-wasm/web)
+                 -> src/runtime/php-compat.js (compatibility layer)
                  -> src/runtime/bootstrap.js
-                 -> src/runtime/php-loader.js
-                 -> php-cgi-wasm
 ```
 
-Responsibilities:
+### PHP Runtime
+
+The PHP runtime is provided by WordPress Playground's `@php-wasm/web` and `@php-wasm/universal`
+packages. These replace the previous `seanmorris/php-wasm` vendored dependencies.
+
+Key files:
+
+- `src/runtime/php-loader.js` — Creates PHP instances via `loadWebRuntime()` and `new PHP()`
+- `src/runtime/php-compat.js` — Compatibility wrapper that maps the WP Playground API to the
+  interface expected by bootstrap.js and php-worker.js (request/response conversion,
+  analyzePath emulation, Emscripten module access)
+
+The PHP 8.3 WASM binary from `@php-wasm/web` includes all extensions built-in:
+`sqlite3`, `pdo_sqlite`, `dom`, `simplexml`, `xml`, `mbstring`, `openssl`, `intl`,
+`iconv`, `zlib`, `zip`, `phar`, `curl`, `gd`, `fileinfo`, `sodium`, `xmlreader`, `xmlwriter`.
+
+### Responsibilities
 
 - `index.html` / `src/shell/main.js`
   - Toolbar, URL bar, iframe host, blueprint import, runtime logs
@@ -81,8 +106,8 @@ Responsibilities:
   - Intercepts same-origin requests
   - Maps static vs scoped/runtime requests
   - Rewrites redirects and HTML links for GitHub Pages subpaths
-- `php-worker.js`
-  - Owns the `php-cgi-wasm` instance for a scope
+- `php-worker.js` (bundled into `dist/php-worker.bundle.js`)
+  - Owns the PHP runtime instance for a scope
   - Boots Moodle and serves HTTP requests through the bridge
 - `src/runtime/bootstrap.js`
   - Prepares storage
@@ -94,9 +119,13 @@ Responsibilities:
 Current model:
 
 - Readonly core: mounted in memory under `/www/moodle`
-- Mutable state: persisted under `/persist`
+- Mutable state: persisted under `/persist` via IDBFS
 - `moodledata`: `/persist/moodledata`
 - Config and manifest markers: `/persist/config`
+
+Persistence uses OPFS (Origin Private File System) via WP Playground's
+`createDirectoryHandleMountHandler`. On boot, existing OPFS data is synced into
+MEMFS; during runtime, FS events are journaled back to OPFS in real-time.
 
 Avoid reintroducing boot-time file-by-file copies of the full Moodle core into persistent storage.
 
@@ -126,9 +155,9 @@ Important files for this prototype:
 - `lib/config-template.js`
 - `src/runtime/bootstrap.js`
 - `src/runtime/php-loader.js`
+- `src/runtime/php-compat.js`
 - `sw.js`
 - `src/remote/main.js`
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
 - `lib/moodle-loader.js`
 - `scripts/patch-moodle-source.sh`
 - `patches/moodle/lib/dml/sqlite3_pdo_moodle_database.php`
@@ -141,7 +170,7 @@ Prototype-specific defaults currently matter during first boot:
 
 - `rememberusername` is intentionally disabled by default
 - several Moodle config values are seeded manually during bootstrap
-- `sodium` is not available in the current wasm runtime, so login/session-related encryption uses a local OpenSSL fallback patch
+- `sodium` is now available via the `@php-wasm/web` runtime, but the OpenSSL fallback patch is kept for compatibility
 
 If you change any of the above behavior, update:
 
@@ -163,39 +192,12 @@ Moodle, like Omeka, may emit HTML-escaped URLs. If navigation works on first loa
 
 ## Extensions
 
-The runtime currently resolves these browser-side PHP shared libraries:
+The `@php-wasm/web` PHP 8.3 runtime includes all required PHP extensions built into the
+WASM binary. No separate shared library loading or vendor directories are needed.
 
-- `dom`
-- `iconv`
-- `intl`
-- `libxml`
-- `simplexml`
-- `zlib`
-- `zip`
-- `mbstring`
-- `openssl`
-- `phar`
-
-If Moodle fails due to missing requirements, check:
-
-- `playground.config.json`
-- `src/runtime/runtime-registry.js`
-- `scripts/sync-browser-deps.mjs`
-
-Do not add a library name to runtime config unless the browser asset is actually available in `vendor/` or the sync/build pipeline has been updated accordingly.
-
-The SQLite prototype currently does not ship all Moodle-required extensions. In practice:
-
-- `sqlite`, `pdo_sqlite`, `xml`, `dom`, `simplexml`, `openssl`, `mbstring`, `intl`, `iconv`, `zip` are part of the working runtime path
-- `curl`, `gd`, `fileinfo`, and `sodium` are still not present as wasm shared libraries in this repo
-
-Do not claim an extension is "enabled" just because Moodle recommends it. Verify:
-
-- `playground.config.json`
-- `src/runtime/runtime-registry.js`
-- `vendor/`
-
-before changing bootstrap assumptions.
+Available extensions include: `sqlite3`, `pdo_sqlite`, `dom`, `simplexml`, `xml`,
+`mbstring`, `openssl`, `intl`, `iconv`, `zlib`, `zip`, `phar`, `curl`, `gd`,
+`fileinfo`, `sodium`, `xmlreader`, `xmlwriter`.
 
 ## Fragile Areas
 
@@ -204,8 +206,10 @@ These areas have repeatedly caused regressions during the SQLite migration:
 - `sw.js`
   - query strings must survive scoped redirects
   - HTML rewriting must keep Moodle links/forms inside the scoped runtime
-- `vendor/php-cgi-wasm/PhpCgiBase.js`
+- `src/runtime/php-compat.js`
   - CGI environment variables such as `HTTP_USER_AGENT`, `SCRIPT_NAME`, and `SCRIPT_FILENAME` are critical
+  - The Request-to-PHPRequest conversion must preserve headers, method, and body
+  - The PHPResponse-to-Response conversion must preserve status codes and headers
 - `src/remote/main.js`
   - the nested iframe can stall with a valid URL/title but an empty body
 - `lib/moodle-loader.js`
@@ -246,6 +250,7 @@ node --check sw.js
 node --check php-worker.js
 node --check src/runtime/bootstrap.js
 node --check src/runtime/php-loader.js
+node --check src/runtime/php-compat.js
 node --check src/shell/main.js
 node --check src/remote/main.js
 ```

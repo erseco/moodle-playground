@@ -6,3 +6,5 @@ node_modules/
 vendor/moodle/
 assets/moodle/
 assets/manifests/latest.json
+.playwright-mcp/
+vendor/

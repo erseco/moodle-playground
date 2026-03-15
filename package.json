@@ -3,25 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare-runtime": "node ./scripts/sync-browser-deps.mjs",
-    "sync-browser-deps": "node ./scripts/sync-browser-deps.mjs",
+    "build:worker": "node esbuild.worker.mjs",
     "bundle": "./scripts/build-moodle-bundle.sh"
   },
   "dependencies": {
-    "fflate": "^0.8.2",
-    "php-cgi-wasm": "0.0.9-alpha-32",
-    "php-wasm": "0.0.9-alpha-32",
-    "php-wasm-dom": "^0.0.0-j",
-    "php-wasm-iconv": "^0.0.9-j",
-    "php-wasm-intl": "^0.0.0-l",
-    "php-wasm-libxml": "^0.0.9-q",
-    "php-wasm-libzip": "^0.0.9-g",
-    "php-wasm-mbstring": "^0.0.0-c",
-    "php-wasm-openssl": "^0.0.9-k",
-    "php-wasm-phar": "^0.0.9-f",
-    "php-wasm-simplexml": "^0.0.0-j",
-    "php-wasm-sqlite": "^0.0.9-x",
-    "php-wasm-xml": "^0.0.0-l",
-    "php-wasm-zlib": "^0.0.9-h"
+    "@php-wasm/universal": "^3.1.11",
+    "@php-wasm/web": "^3.1.11",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4"
   }
 }

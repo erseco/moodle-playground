@@ -11,14 +11,13 @@
     <div class="remote-boot">
       <iframe id="remote-frame" title="Moodle Site Host"></iframe>
       <div class="remote-boot__card">
-        <strong>Configuring Moodle Playground</strong>
-        <p id="remote-status">Loading playground runtime.</p>
+        <strong id="remote-title">Preparing Moodle Playground</strong>
         <div class="remote-boot__progress">
-          <div class="loading-indicator" aria-hidden="true">
-            <span class="loading-spinner"></span>
-            <span class="loading-bar"></span>
+          <div class="progress-bar" aria-hidden="true">
+            <div class="progress-bar__fill" id="progress-fill"></div>
           </div>
-          <span class="loading-copy">Loading runtime…</span>
+          <span class="progress-percent" id="progress-percent">0%</span>
+          <span class="loading-copy" id="remote-status">Initializing…</span>
         </div>
       </div>
     </div>

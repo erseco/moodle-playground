@@ -1,7 +1,11 @@
 import { resolveBootstrapArchive } from "../../lib/moodle-loader.js";
 
-export async function fetchManifest(manifestUrl = "../../assets/manifests/latest.json") {
-  const response = await fetch(new URL(manifestUrl, import.meta.url), { cache: "no-cache" });
+export async function fetchManifest(manifestUrl) {
+  if (!manifestUrl) {
+    const base = typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : new URL("../../", import.meta.url).href;
+    manifestUrl = new URL("assets/manifests/latest.json", base).toString();
+  }
+  const response = await fetch(manifestUrl, { cache: "no-cache" });
 
   if (!response.ok) {
     throw new Error(`Unable to load Moodle manifest: ${response.status}`);

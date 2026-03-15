@@ -4,6 +4,9 @@ import { bootstrapMoodle } from "./src/runtime/bootstrap.js";
 import { createPhpRuntime, createProvisioningRuntime } from "./src/runtime/php-loader.js";
 
 const workerUrl = new URL(self.location.href);
+// __APP_ROOT__ is injected by esbuild and points to the project root.
+// Falls back to self.location for unbundled contexts.
+const appRootUrl = typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : new URL("./", self.location.href).toString();
 const scopeId = workerUrl.searchParams.get("scope");
 const runtimeId = workerUrl.searchParams.get("runtime");
 let bridgeChannel = null;
@@ -37,17 +40,10 @@ async function capturePhpInfoHtml(runtimeConfig, reason = "manual") {
 
   phpInfoCapturePromise = (async () => {
     const php = createProvisioningRuntime(runtimeConfig);
-    const output = [];
-    const errors = [];
-    const onOutput = (event) => output.push(String(event.detail ?? ""));
-    const onError = (event) => errors.push(String(event.detail ?? ""));
-
-    php.addEventListener("output", onOutput);
-    php.addEventListener("error", onError);
 
     try {
       await php.refresh();
-      await php.run(`<?php
+      const response = await php.run(`<?php
 ob_start();
 phpinfo();
 $html = ob_get_clean();
@@ -56,18 +52,16 @@ echo $html;
 
       return {
         detail: `Captured PHP runtime diagnostics (${reason}).`,
-        html: output.join(""),
-        errorOutput: errors.join(""),
+        html: response.text || "",
+        errorOutput: response.errors || "",
       };
     } catch (error) {
       return {
         detail: `Failed to capture PHP runtime diagnostics (${reason}).`,
         html: `<!doctype html><meta charset="utf-8"><pre>${formatErrorDetail(error)}</pre>`,
-        errorOutput: errors.join(""),
+        errorOutput: "",
       };
     } finally {
-      php.removeEventListener("output", onOutput);
-      php.removeEventListener("error", onError);
       phpInfoCapturePromise = null;
     }
   })();
@@ -163,7 +157,7 @@ async function getRuntimeState() {
 
     const runtime = config.runtimes.find((entry) => entry.id === runtimeId) || config.runtimes[0];
     activeRuntimeConfig = runtime;
-    const php = createPhpRuntime(runtime);
+    const php = createPhpRuntime(runtime, { appBaseUrl: appRootUrl });
 
     postShell({
       kind: "progress",
@@ -197,7 +191,7 @@ async function getRuntimeState() {
     let bootstrapState;
     try {
       bootstrapState = await bootstrapMoodle({
-        appBaseUrl: new URL("./", self.location.href).toString(),
+        appBaseUrl: appRootUrl,
         config,
         blueprint: activeBlueprint,
         php,

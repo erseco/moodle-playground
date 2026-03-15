@@ -1,4 +1,7 @@
-const CONFIG_URL = new URL("../../playground.config.json", import.meta.url);
+// Use __APP_ROOT__ (injected by esbuild for bundled workers) or fall back
+// to import.meta.url for unbundled browser module contexts.
+const baseUrl = typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : new URL("../../", import.meta.url).href;
+const CONFIG_URL = new URL("playground.config.json", baseUrl);
 
 let configPromise;
 

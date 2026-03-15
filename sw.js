@@ -364,6 +364,13 @@ self.addEventListener("fetch", (event) => {
       scopeId,
     }).catch((error) => buildErrorResponse(String(error?.stack || error?.message || error)));
 
+    if (response.status >= 300 && response.status < 400) {
+      await broadcastToClients({
+        kind: "sw-debug",
+        detail: `Redirect ${response.status} from ${requestPath} → Location: ${response.headers.get("location") || "(none)"}`,
+      });
+    }
+
     const locationScopedResponse = rewriteScopedLocation(response, {
       origin: url.origin,
       scopeId,

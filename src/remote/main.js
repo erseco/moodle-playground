@@ -5,7 +5,10 @@ import { createShellChannel } from "../shared/protocol.js";
 import { saveSessionState } from "../shared/storage.js";
 
 const overlayEl = document.querySelector(".remote-boot__card");
+const titleEl = document.querySelector("#remote-title");
 const statusEl = document.querySelector("#remote-status");
+const progressFillEl = document.querySelector("#progress-fill");
+const progressPercentEl = document.querySelector("#progress-percent");
 const frameEl = document.querySelector("#remote-frame");
 const SW_RESET_KEY_PREFIX = "moodle-playground:sw-reset";
 const CONTROL_RELOAD_KEY_PREFIX = "moodle-playground:remote-sw-controlled";
@@ -15,6 +18,40 @@ let frameWatchTimer = 0;
 let lastAnnouncedFrameHref = "";
 let frameRecoveryTimer = 0;
 let frameRecoveryAttempted = false;
+let dotsTimer = 0;
+let dotsCount = 0;
+
+function startDotsAnimation() {
+  if (dotsTimer) return;
+  if (titleEl && !titleEl.querySelector(".dots")) {
+    titleEl.innerHTML = `Preparing Moodle Playground<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
+  }
+  const dots = titleEl?.querySelectorAll(".dots span");
+  if (!dots?.length) return;
+  dotsTimer = setInterval(() => {
+    dotsCount = (dotsCount + 1) % 4;
+    dots.forEach((dot, i) => {
+      dot.style.visibility = i < dotsCount ? "visible" : "hidden";
+    });
+  }, 400);
+}
+
+function stopDotsAnimation() {
+  if (dotsTimer) {
+    clearInterval(dotsTimer);
+    dotsTimer = 0;
+  }
+}
+
+function cleanProgressDetail(detail) {
+  if (!detail) return "";
+  // Strip leading timing like "[1234ms] " or "[1234ms config] "
+  // and trailing timing like " [350ms]"
+  return detail
+    .replace(/^\[\d+ms[^\]]*\]\s*/u, "")
+    .replace(/\s*\[\d+ms\]\s*$/u, "")
+    .trim();
+}
 
 function normalizeScopeFragment(value) {
   return String(value || "").replace(/[^A-Za-z0-9_]/gu, "_");
@@ -22,17 +59,31 @@ function normalizeScopeFragment(value) {
 
 function setOverlayVisible(isVisible) {
   overlayEl?.classList.toggle("is-hidden", !isVisible);
+  if (isVisible) {
+    startDotsAnimation();
+  } else {
+    stopDotsAnimation();
+  }
 }
 
-function setRemoteProgress(detail) {
+function setRemoteProgress(detail, progress) {
   if (statusEl && detail) {
-    statusEl.textContent = detail;
+    statusEl.textContent = cleanProgressDetail(detail);
+  }
+  if (typeof progress === "number") {
+    const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
+    if (progressFillEl) {
+      progressFillEl.style.width = `${pct}%`;
+    }
+    if (progressPercentEl) {
+      progressPercentEl.textContent = `${pct}%`;
+    }
   }
 }
 
 function emit(scopeId, message) {
   if (message?.kind === "progress") {
-    setRemoteProgress(message.detail);
+    setRemoteProgress(message.detail, message.progress);
   }
   if (message?.kind === "error") {
     setRemoteProgress(message.detail);
@@ -81,9 +132,28 @@ async function deleteIndexedDbDatabase(name) {
   });
 }
 
-async function resetRuntimeIndexedDb({ scopeId, runtimeId, includePersistentOverlay = false }) {
-  if (!indexedDB.databases) {
+async function resetOpfsStorage() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry("moodle-persist", { recursive: true });
+    return true;
+  } catch {
     return false;
+  }
+}
+
+async function resetRuntimeIndexedDb({ scopeId, runtimeId, includePersistentOverlay = false }) {
+  let cleared = false;
+
+  // Clear OPFS persistent storage (used by @php-wasm/web mount handler)
+  if (includePersistentOverlay) {
+    const opfsCleared = await resetOpfsStorage();
+    cleared = cleared || opfsCleared;
+  }
+
+  // Also clear any legacy IndexedDB databases
+  if (!indexedDB.databases) {
+    return cleared;
   }
 
   const scopeFragment = normalizeScopeFragment(scopeId);
@@ -93,7 +163,6 @@ async function resetRuntimeIndexedDb({ scopeId, runtimeId, includePersistentOver
     `${scopeFragment}_${runtimeFragment}`,
   ];
   const dbs = await indexedDB.databases();
-  let cleared = false;
 
   for (const db of dbs) {
     const name = db?.name || "";
@@ -430,7 +499,7 @@ async function bootstrapRemote() {
   setRemoteProgress("Service Worker ready and controlling this tab.");
 
   if (!phpWorker) {
-    const workerUrl = new URL("../../php-worker.js", import.meta.url);
+    const workerUrl = new URL("../../dist/php-worker.bundle.js", import.meta.url);
     workerUrl.searchParams.set("scope", scopeId);
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });
@@ -449,6 +518,22 @@ async function bootstrapRemote() {
       });
     });
   }
+  // Listen to the shell channel so we can pick up bootstrap progress
+  // messages from the worker and display them on the loading overlay.
+  const shellChannel = new BroadcastChannel(createShellChannel(scopeId));
+  shellChannel.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (msg?.kind === "progress") {
+      setRemoteProgress(msg.detail, msg.progress);
+    }
+    if (msg?.kind === "error") {
+      setRemoteProgress(msg.detail);
+    }
+    if (msg?.kind === "ready") {
+      setRemoteProgress(msg.detail, 1);
+    }
+  });
+
   const workerReadyPromise = waitForPhpWorkerReady(scopeId, runtime.id, phpWorker);
   phpWorker.postMessage({
     kind: "configure-blueprint",
@@ -464,14 +549,7 @@ async function bootstrapRemote() {
   bindShellCommands(scopeId, runtime.id);
   bindFrameNavigation(scopeId, runtime.id);
   navigateFrame(scopeId, runtime.id, requestedPath);
-  setRemoteProgress("Runtime host registered. Waiting for the PHP worker to finish bootstrap.");
-
-  emit(scopeId, {
-    kind: "progress",
-    title: "Runtime host ready",
-    detail: "The embedded Moodle iframe is loading.",
-    progress: 0.18,
-  });
+  setRemoteProgress("Loading Moodle…", 0.98);
 }
 
 bootstrapRemote().catch((error) => {

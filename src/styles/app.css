@@ -301,51 +301,38 @@ button.danger {
   height: 16px;
 }
 
-.loading-indicator {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-}
-
-.loading-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.16);
-  border-top-color: var(--accent);
-  border-radius: 999px;
-  animation: shell-spin 1.6s linear infinite;
-}
-
-.loading-bar {
-  position: relative;
-  display: block;
+.progress-bar {
   width: 100%;
-  height: 14px;
-  border-radius: 4px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 11%, transparent 11% 14%, rgba(255, 255, 255, 0.05) 14% 25%, transparent 25% 28%, rgba(255, 255, 255, 0.05) 28% 39%, transparent 39% 42%, rgba(255, 255, 255, 0.05) 42% 53%, transparent 53% 56%, rgba(255, 255, 255, 0.05) 56% 67%, transparent 67% 70%, rgba(255, 255, 255, 0.05) 70% 81%, transparent 81% 84%, rgba(255, 255, 255, 0.05) 84% 95%, transparent 95% 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.loading-bar::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: -24%;
-  width: 24%;
-  border-radius: 2px;
-  background:
-    linear-gradient(90deg, var(--accent-strong) 0 30%, transparent 30% 36%, var(--accent) 36% 66%, transparent 66% 72%, var(--accent-strong) 72% 100%);
-  animation: shell-loading-blocks 15s linear infinite;
+.progress-bar__fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease-out;
+}
+
+.progress-percent {
+  display: block;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #333;
 }
 
 .loading-copy {
   display: block;
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: #888;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .settings-field {
@@ -378,6 +365,11 @@ button.danger {
   font: 600 0.78rem/1.2 ui-monospace, "SFMono-Regular", monospace;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.panel__row-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .log-panel {
@@ -426,39 +418,32 @@ button.danger {
   position: absolute;
   inset: 0;
   z-index: 10;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
-  background: rgba(9, 16, 25, 0.72);
-  backdrop-filter: blur(6px);
+  background: #f8f9fa;
   pointer-events: all;
 }
 
-.remote-boot__card > strong,
-.remote-boot__card > p,
-.remote-boot__card > .remote-boot__progress {
-  width: min(560px, 100%);
-}
-
-.remote-boot__card > strong,
-.remote-boot__card > p,
-.remote-boot__progress {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.remote-boot__card > p {
-  margin: 0;
+.remote-boot__card > strong {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 20px;
 }
 
 .remote-boot__progress {
+  width: min(480px, 100%);
   display: grid;
-  gap: 10px;
+  gap: 14px;
+}
+
+.remote-boot__progress .loading-copy {
+  color: #666;
+  font-size: 0.82rem;
+  text-align: center;
 }
 
 .remote-boot__card.is-hidden {
@@ -468,16 +453,6 @@ button.danger {
 @keyframes shell-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes shell-loading-blocks {
-  0% {
-    transform: translateX(0%);
-  }
-
-  100% {
-    transform: translateX(520%);
   }
 }
 
