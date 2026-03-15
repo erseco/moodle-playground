@@ -30,6 +30,7 @@ const PDO_PROBE_PATH = `${MOODLE_ROOT}/__pdo_probe.php`;
 const PDO_DDL_PROBE_PATH = `${MOODLE_ROOT}/__pdo_ddl_probe.php`;
 const CONFIG_NORMALIZER_PATH = `${MOODLE_ROOT}/__config_normalizer.php`;
 const CACHE_CONFIG_PATH = `${MOODLE_ROOT}/cache/classes/config.php`;
+const COMPONENT_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/component.php`;
 const SQLITE_DRIVER_PATH = `${MOODLE_ROOT}/lib/dml/sqlite3_pdo_moodle_database.php`;
 const ENCRYPTION_CLASS_PATH = `${MOODLE_ROOT}/lib/classes/encryption.php`;
 const ADMINLIB_PATH = `${MOODLE_ROOT}/lib/adminlib.php`;
@@ -48,6 +49,7 @@ const INTERNAL_RUNTIME_FILES = [
   PDO_DDL_PROBE_PATH,
   CONFIG_NORMALIZER_PATH,
   CACHE_CONFIG_PATH,
+  COMPONENT_CLASS_PATH,
   SQLITE_DRIVER_PATH,
   ENCRYPTION_CLASS_PATH,
   ADMINLIB_PATH,
@@ -549,6 +551,54 @@ $runStage = static function(string $name) use (&$options, &$version, &$release, 
             if (!empty($CFG->setsitepresetduringinstall)) {
                 \\core_adminpresets\\helper::change_default_preset($CFG->setsitepresetduringinstall);
             }
+
+            // Apply defaults for settings hidden during initial install (guarded by
+            // "if (!during_initial_install())"). Setting them directly avoids reloading
+            // the full admin tree, which would exhaust WASM memory.
+            // This prevents admin/index.php from redirecting to upgradesettings.php.
+            $postinstalldefaults = [
+                // tool_mobile settings.php: guarded by !during_initial_install()
+                ['enablemobilewebservice', 0, null],
+                // Other settings commonly missing after install
+                ['enablebadges', 1, null],
+                ['messaging', 1, null],
+                ['enablecompletion', 1, null],
+                // message/classes/helper.php: $CFG->messagingdefaultpressenter
+                ['messagingdefaultpressenter', 1, null],
+            ];
+            foreach ($postinstalldefaults as [$key, $val, $plugin]) {
+                if (get_config($plugin ?? 'core', $key) === false) {
+                    set_config($key, $val, $plugin);
+                }
+            }
+            echo "[playground] finalize:post-install-defaults-set\\n";
+
+            // Ensure moodlecourse plugin defaults exist — course/edit_form.php reads these
+            // and emits warnings if they are missing.
+            $coursedefaults = [
+                'format'             => 'topics',
+                'maxsections'        => 52,
+                'numsections'        => 4,
+                'hiddensections'     => 1,
+                'coursedisplay'      => 0,
+                'lang'               => '',
+                'newsitems'          => 5,
+                'showgrades'         => 1,
+                'showreports'        => 0,
+                'showactivitydates'  => 1,
+                'maxbytes'           => 0,
+                'groupmode'          => 0,
+                'visible'            => 1,
+                'groupmodeforce'     => 0,
+                'enablecompletion'   => 1,
+            ];
+            foreach ($coursedefaults as $k => $v) {
+                if (get_config('moodlecourse', $k) === false) {
+                    set_config($k, $v, 'moodlecourse');
+                }
+            }
+            echo "[playground] finalize:course-defaults-ensured\\n";
+
             echo "[playground] finalize:ok\\n";
             flush();
             break;
@@ -917,6 +967,17 @@ async function patchRuntimePhpSources(php) {
     [
       "debugging('A cache mode mapping exists for a mode or store that does not exist.', DEBUG_DEVELOPER);",
       "if (!(defined('CACHE_DISABLE_ALL') && CACHE_DISABLE_ALL)) { debugging('A cache mode mapping exists for a mode or store that does not exist.', DEBUG_DEVELOPER); }",
+    ],
+  ]);
+
+  // In WASM, the filesystem scan triggered by IGNORE_COMPONENT_CACHE produces an
+  // incomplete component registry (missing plugins, themes, lang strings, classes).
+  // Patch core_component::init() to skip the scan and fall through to the prebuilt
+  // alternative_component_cache when PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE is set.
+  await patchFile(COMPONENT_CLASS_PATH, [
+    [
+      "if (defined('IGNORE_COMPONENT_CACHE') && IGNORE_COMPONENT_CACHE) {\n            self::fill_all_caches();\n            return;\n        }",
+      "if (defined('IGNORE_COMPONENT_CACHE') && IGNORE_COMPONENT_CACHE\n                && !(defined('PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE') && PLAYGROUND_ALLOW_OUTDATED_COMPONENT_CACHE)) {\n            self::fill_all_caches();\n            return;\n        }",
     ],
   ]);
 
